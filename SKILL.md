@@ -55,7 +55,9 @@ These are the standing expectations for any agent using this skill:
    or change, then claim → edit → resolve
    (`comment-claim` / mutators / `comment-resolve`). When an ask is
    ambiguous, ask in the thread with `comment-reply` and `wait` for the
-   answer instead of guessing. Read
+   answer instead of guessing. During comment triage, commit frequently after
+   coherent batches or resolved threads so the work stays traceable and easy
+   to review or revert. Read
    [`resources/studio-agent-loop.md`](resources/studio-agent-loop.md) before
    your first loop.
 5. **Prefer mutators for content changes while a studio session is live**
