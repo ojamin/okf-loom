@@ -104,6 +104,9 @@ Three properties fall out of this:
 2. **One canonical model.** `ContentIndex` is the Quartz lesson (see
    `research.md` §A): search, graph, listings, and the viewer all read
    the same in-memory object. There is no second index for the viewer.
+   `Graph.edges` retains authored occurrences; `Graph.logical_edges()`
+   de-duplicates by `(source, relation type, target)` for rank/view consumers
+   without erasing occurrence-level diagnostics.
 3. **Mutations are round-trip.** Every writer (update.py, index.py,
    log.py) goes through `parse_document → modify → serialize_document`
    so unknown frontmatter keys and key order are preserved.
@@ -112,7 +115,7 @@ Three properties fall out of this:
 
 okf-loom is extensible without forking. The five override surfaces:
 
-1. **Capability registry** (`extensions.py`). 25 built-in `okf.cap.*`
+1. **[Capability registry](/reference/capabilities.md)** (`extensions.py`). 25 built-in `okf.cap.*`
    capabilities (core/recommended/optional tiers), including the
    governed-key caps (`aliases`, `provenance`, `citations`, `entities`) and
    `wikilinks`/`search_hybrid` (auto-activate on `[[…]]` use / a hybrid
@@ -122,10 +125,11 @@ okf-loom is extensible without forking. The five override surfaces:
 2. **Search backends** (`search.py`). `SearchBackend` Protocol. The
    `LexicalBackend` (BM25), `SemanticLiteBackend` (trigram+token TF cosine),
    and `HybridBackend` (RRF fusion of the two) all ship dependency-free.
-   There is no local embedding backend: the agent (an LLM in opencode /
-   Claude Code / Codex) is itself the best true-semantic engine, so a
-   dense/vector backend would be redundant. The CLI `--mode` flag
-   dispatches to the matching backend.
+   There is no shipped dense backend; broad paraphrase recall is a legitimate
+   optional `SearchBackend` use case because a downstream agent cannot rerank
+   a concept retrieval omitted. The CLI `--mode` flag dispatches to the
+   matching shipped backend, with opt-in SemanticLite thresholds and Hybrid
+   backend-evidence requirements.
 3. **Viewer template / static / palette / config overrides**
    (`viewer/assets.py`). A bundle drops files under
    `.okf-loom/viewer/{templates,static}/`, `.okf-loom/viewer/palette.json`, or

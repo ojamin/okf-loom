@@ -49,13 +49,14 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from . import (
     RECOMMENDED_FRONTMATTER_KEYS,
     SPEC_VERSION,
 )
 from .model import Bundle, Concept, IndexFile
-from .paths import ConceptId, concept_id_from_str, concept_id_to_str
+from .paths import ConceptId, ConceptIdError, concept_id_from_str, concept_id_to_str
 
 
 class Severity(str, Enum):
@@ -397,6 +398,8 @@ def validate_bundle(
         _check_concept_required_keys(bundle, report)
     if spec.concept_recommended_keys:
         _check_concept_recommended_keys(bundle, report)
+    if spec.governed_metadata:
+        _check_governed_metadata(bundle, report)
     if spec.reserved_filenames:
         _check_reserved_filenames(bundle, report)
     if spec.link_integrity:
@@ -450,6 +453,13 @@ _FINDING_CODE_TO_CATEGORY: dict[str, str] = {
     "concept.duplicate_id": "concept_required_keys",
     # concept_recommended_keys
     "concept.missing_recommended_keys": "concept_recommended_keys",
+    # governed_metadata
+    "frontmatter.aliases_malformed": "governed_metadata",
+    "frontmatter.entities_malformed": "governed_metadata",
+    "frontmatter.provenance_malformed": "governed_metadata",
+    "frontmatter.citations_malformed": "governed_metadata",
+    "frontmatter.relations_malformed": "governed_metadata",
+    "relation.duplicate": "governed_metadata",
     # reserved_filenames (also surfaces non-root index frontmatter)
     "index.non_root_frontmatter": "reserved_filenames",
     # link_integrity (link checks + asset/image checks + citations-collision
@@ -484,6 +494,7 @@ class CheckSpec:
     spec_version_check: bool = True
     concept_required_keys: bool = True
     concept_recommended_keys: bool = True
+    governed_metadata: bool = True
     reserved_filenames: bool = True
     link_integrity: bool = True
     index_structure: bool = True
@@ -636,6 +647,197 @@ def _check_concept_recommended_keys(
                     detail={"missing": missing},
                 )
             )
+
+
+def _governed_finding(
+    report: ValidationReport,
+    concept: Concept,
+    *,
+    code: str,
+    message: str,
+    detail: dict[str, Any],
+) -> None:
+    """Append one stable, warning-level governed-metadata finding."""
+    report.findings.append(
+        Finding(
+            code=code,
+            severity=Severity.WARNING,
+            message=message,
+            path=concept.path,
+            concept_id=concept.id,
+            detail=detail,
+        )
+    )
+
+
+def _bad_string_field(entry: dict[str, Any], field_name: str) -> bool:
+    """True when a present governed object field is not a non-empty string."""
+    return field_name in entry and (
+        not isinstance(entry[field_name], str) or not entry[field_name].strip()
+    )
+
+
+def _check_governed_metadata(bundle: Bundle, report: ValidationReport) -> None:
+    """Validate shapes of the five governed extension keys.
+
+    These are soft producer-quality checks, not additions to OKF v0.1's hard
+    conformance surface.  Unknown top-level keys and unknown fields inside a
+    valid governed object remain legal and untouched.
+    """
+    for concept in bundle.concepts.values():
+        fm = concept.frontmatter
+
+        if "aliases" in fm:
+            aliases = fm["aliases"]
+            code = "frontmatter.aliases_malformed"
+            if not isinstance(aliases, list):
+                _governed_finding(
+                    report, concept, code=code,
+                    message="`aliases` must be a list of strings or alias objects.",
+                    detail={"key": "aliases", "reason": "expected_list", "actual": type(aliases).__name__},
+                )
+            else:
+                for i, alias in enumerate(aliases):
+                    reason = None
+                    if isinstance(alias, str):
+                        if not alias.strip():
+                            reason = "empty_string"
+                    elif isinstance(alias, dict):
+                        if _bad_string_field(alias, "label") or "label" not in alias:
+                            reason = "missing_or_invalid_label"
+                        elif "discoverable" in alias and not isinstance(alias["discoverable"], bool):
+                            reason = "discoverable_must_be_boolean"
+                    else:
+                        reason = "expected_string_or_object"
+                    if reason:
+                        _governed_finding(
+                            report, concept, code=code,
+                            message=f"Malformed `aliases` entry at index {i}: {reason}.",
+                            detail={"key": "aliases", "index": i, "reason": reason},
+                        )
+
+        if "entities" in fm:
+            entities = fm["entities"]
+            code = "frontmatter.entities_malformed"
+            if not isinstance(entities, list):
+                _governed_finding(
+                    report, concept, code=code,
+                    message="`entities` must be a list of strings or entity objects.",
+                    detail={"key": "entities", "reason": "expected_list", "actual": type(entities).__name__},
+                )
+            else:
+                for i, entity in enumerate(entities):
+                    reason = None
+                    if isinstance(entity, str):
+                        if not entity.strip():
+                            reason = "empty_string"
+                    elif isinstance(entity, dict):
+                        if _bad_string_field(entity, "label") or "label" not in entity:
+                            reason = "missing_or_invalid_label"
+                        elif any(_bad_string_field(entity, k) for k in ("id", "kind")):
+                            reason = "id_and_kind_must_be_non_empty_strings"
+                        elif "aliases" in entity and (
+                            not isinstance(entity["aliases"], list)
+                            or any(not isinstance(a, str) or not a.strip() for a in entity["aliases"])
+                        ):
+                            reason = "aliases_must_be_non_empty_string_list"
+                    else:
+                        reason = "expected_string_or_object"
+                    if reason:
+                        _governed_finding(
+                            report, concept, code=code,
+                            message=f"Malformed `entities` entry at index {i}: {reason}.",
+                            detail={"key": "entities", "index": i, "reason": reason},
+                        )
+
+        for key, fields in (
+            ("provenance", ("source", "note", "timestamp")),
+            ("citations", ("id", "text", "url")),
+        ):
+            if key not in fm:
+                continue
+            value = fm[key]
+            code = f"frontmatter.{key}_malformed"
+            if not isinstance(value, list):
+                _governed_finding(
+                    report, concept, code=code,
+                    message=f"`{key}` must be a list of objects.",
+                    detail={"key": key, "reason": "expected_list", "actual": type(value).__name__},
+                )
+                continue
+            for i, entry in enumerate(value):
+                reason = None
+                if not isinstance(entry, dict):
+                    reason = "expected_object"
+                elif not any(
+                    isinstance(entry.get(k), str) and bool(entry.get(k, "").strip())
+                    for k in fields
+                ):
+                    reason = "no_renderable_fields"
+                elif any(_bad_string_field(entry, k) for k in fields):
+                    reason = "fields_must_be_non_empty_strings"
+                if reason:
+                    _governed_finding(
+                        report, concept, code=code,
+                        message=f"Malformed `{key}` entry at index {i}: {reason}.",
+                        detail={"key": key, "index": i, "reason": reason},
+                    )
+
+        if "relations" in fm:
+            relations = fm["relations"]
+            code = "frontmatter.relations_malformed"
+            if not isinstance(relations, list):
+                _governed_finding(
+                    report, concept, code=code,
+                    message="`relations` must be a list of typed relation objects.",
+                    detail={"key": "relations", "reason": "expected_list", "actual": type(relations).__name__},
+                )
+                continue
+            seen_relations: dict[tuple[str, str], int] = {}
+            for i, relation in enumerate(relations):
+                reason = None
+                normalized_target = None
+                if not isinstance(relation, dict):
+                    reason = "expected_object"
+                elif _bad_string_field(relation, "target") or "target" not in relation:
+                    reason = "missing_or_invalid_target"
+                elif _bad_string_field(relation, "type") or "type" not in relation:
+                    reason = "missing_or_invalid_type"
+                elif "detail" in relation and not isinstance(relation["detail"], str):
+                    reason = "detail_must_be_string"
+                else:
+                    try:
+                        normalized_target = concept_id_to_str(
+                            concept_id_from_str(relation["target"])
+                        )
+                    except (ConceptIdError, ValueError):
+                        reason = "invalid_target_concept_id"
+                if reason:
+                    _governed_finding(
+                        report, concept, code=code,
+                        message=f"Malformed `relations` entry at index {i}: {reason}.",
+                        detail={"key": "relations", "index": i, "reason": reason},
+                    )
+                    continue
+                logical_key = (relation["type"].strip(), normalized_target or "")
+                first = seen_relations.get(logical_key)
+                if first is not None:
+                    _governed_finding(
+                        report, concept, code="relation.duplicate",
+                        message=(
+                            f"Duplicate typed relation at index {i}; it repeats "
+                            f"index {first} for ({logical_key[0]}, {logical_key[1]})."
+                        ),
+                        detail={
+                            "key": "relations",
+                            "index": i,
+                            "first_index": first,
+                            "type": logical_key[0],
+                            "target": logical_key[1],
+                        },
+                    )
+                else:
+                    seen_relations[logical_key] = i
 
 
 def _check_reserved_filenames(bundle: Bundle, report: ValidationReport) -> None:

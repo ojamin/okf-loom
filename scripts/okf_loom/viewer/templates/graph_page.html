@@ -18,6 +18,7 @@
       __INITIAL_THEME__    → "light" | "dark" | "pastel" | "sepia" | "midnight"
       __INITIAL_LAYOUT__   → "cose" | "concentric" | ...
       __GRAPH_DATA_URL__   → URL to fetch graph.json from (or empty to inline)
+      __GRAPH_DATA_INLINE__ → inert template-held JSON for file:// static builds
       __BACK_LINK__        → URL back to the index
 -->
 <html lang="__LANG__"__THEME_ATTR__>
@@ -106,6 +107,10 @@ __CDN_SCRIPTS__
     </article>
   </aside>
 </main>
+
+<!-- Static builds inline inert JSON here because browsers block fetch() from
+     file:// pages. Serve/SPA leave this placeholder empty and fetch normally. -->
+__GRAPH_DATA_INLINE__
 
 <!-- graph.js reads config from data-* attributes on #okf-graph (CSP-safe:
      no inline scripting). The previous comment-only inline script element

@@ -190,6 +190,22 @@ def test_build_site_static_includes_graph_data(tiny_good_bundle: Path) -> None:
     assert len(data["nodes"]) == len(b.concepts)
 
 
+def test_static_graph_inlines_data_instead_of_fetching_under_file_scheme(
+    tiny_good_bundle: Path,
+) -> None:
+    b = Bundle.load(tiny_good_bundle)
+    out_dir = tiny_good_bundle / "_site_inline_graph"
+    build_site(b, out_dir, target="static")
+    html = (out_dir / "__graph.html").read_text(encoding="utf-8")
+    assert 'data-graph-url=""' in html
+    match = re.search(
+        r'<template id="okf-graph-data">(.*?)</template>', html, re.DOTALL,
+    )
+    assert match, "static graph page has no inline graph payload"
+    payload = json.loads(match.group(1))
+    assert len(payload["nodes"]) == len(b.concepts)
+
+
 def test_build_site_unknown_target_raises(tiny_good_bundle: Path) -> None:
     b = Bundle.load(tiny_good_bundle)
     with pytest.raises(ValueError, match="Unknown target"):
@@ -761,6 +777,11 @@ def test_static_search_page_loads_client_side_searcher(
     assert (out_dir / "__static" / "static-search.js").exists(), (
         "static-search.js was not emitted under __static/"
     )
+    inline = re.search(
+        r'<template id="okf-search-data">(.*?)</template>', html, re.DOTALL,
+    )
+    assert inline, "static search page has no file://-safe inline corpus"
+    assert len(json.loads(inline.group(1))) == len(b.concepts)
 
 
 def test_serve_and_spa_search_pages_do_not_load_static_searcher(
@@ -779,6 +800,7 @@ def test_serve_and_spa_search_pages_do_not_load_static_searcher(
             f"static-search.js leaked into {mode} search page (should be "
             f"static-only)"
         )
+        assert 'id="okf-search-data"' not in html
         assert "wiki.js" in html, f"{mode} page lost wiki.js"
 
 

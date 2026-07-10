@@ -59,6 +59,101 @@ def test_only_type_is_required_not_title(tmp_path: Path) -> None:
     assert len(r.errors) == 0
 
 
+def test_governed_outer_shapes_warn_without_changing_base_conformance(
+    tmp_path: Path,
+) -> None:
+    """Present-but-malformed governed keys activate capabilities but no longer
+    pass strict validation silently. They remain soft under base OKF v0.1."""
+    (tmp_path / "a.md").write_text(
+        "---\n"
+        "type: T\n"
+        "title: A\n"
+        "description: d\n"
+        "resource: r\n"
+        "tags: [x]\n"
+        "timestamp: '2026-01-01'\n"
+        "aliases: {label: wrong-outer-shape}\n"
+        "entities: {label: wrong-outer-shape}\n"
+        "provenance: {source: wrong-outer-shape}\n"
+        "citations: {text: wrong-outer-shape}\n"
+        "relations: {target: b, type: references}\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    b = Bundle.load(tmp_path)
+    r = validate_bundle(b)
+    codes = {f.code for f in r.warnings}
+    assert codes >= {
+        "frontmatter.aliases_malformed",
+        "frontmatter.entities_malformed",
+        "frontmatter.provenance_malformed",
+        "frontmatter.citations_malformed",
+        "frontmatter.relations_malformed",
+    }
+    assert r.ok is True
+    assert r.ok_strict is False
+
+
+def test_governed_entry_shapes_and_duplicate_relations_have_stable_findings(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a.md").write_text(
+        "---\n"
+        "type: T\n"
+        "aliases: [{discoverable: false}]\n"
+        "entities: [{label: X, aliases: nope}]\n"
+        "provenance: [{}]\n"
+        "citations: [plain-string]\n"
+        "relations:\n"
+        "  - {target: /b.md, type: references, custom: preserved}\n"
+        "  - {target: b, type: references, detail: duplicate}\n"
+        "  - {target: '../escape', type: references}\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.md").write_text("---\ntype: T\n---\nbody\n", encoding="utf-8")
+    r = validate_bundle(Bundle.load(tmp_path))
+    codes = [f.code for f in r.findings]
+    for code in (
+        "frontmatter.aliases_malformed",
+        "frontmatter.entities_malformed",
+        "frontmatter.provenance_malformed",
+        "frontmatter.citations_malformed",
+        "frontmatter.relations_malformed",
+        "relation.duplicate",
+    ):
+        assert code in codes
+    duplicate = next(f for f in r.findings if f.code == "relation.duplicate")
+    assert duplicate.detail == {
+        "key": "relations",
+        "index": 1,
+        "first_index": 0,
+        "type": "references",
+        "target": "b",
+    }
+
+
+def test_valid_governed_shapes_do_not_warn(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text(
+        "---\n"
+        "type: T\n"
+        "aliases: [Alt, {label: Search only, discoverable: false}]\n"
+        "entities: [Thing, {id: entity/x, label: X, kind: Domain, aliases: [Ex]}]\n"
+        "provenance: [{source: internal, note: curated, timestamp: '2026-01-01'}]\n"
+        "citations: [{id: '1', text: Reference, url: 'https://example.com'}]\n"
+        "relations: [{target: b, type: references, detail: why}]\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.md").write_text("---\ntype: T\n---\nbody\n", encoding="utf-8")
+    r = validate_bundle(Bundle.load(tmp_path))
+    governed = [
+        f for f in r.findings
+        if f.code.startswith("frontmatter.") or f.code == "relation.duplicate"
+    ]
+    assert governed == []
+
+
 def test_missing_type_is_error(tmp_path: Path) -> None:
     """A concept missing ``type`` is an ERROR (SPEC §9 conformance failure)."""
     (tmp_path / "a.md").write_text(

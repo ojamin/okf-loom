@@ -103,3 +103,24 @@ def test_graph_data_exposes_alias_object_labels(tmp_path) -> None:
     node = data["nodes"][0]["data"]
 
     assert node["aliases"] == ["Architecture"]
+
+
+def test_graph_data_prefers_typed_edges_but_keeps_distinct_relation_types(
+    tmp_path,
+) -> None:
+    (tmp_path / "a.md").write_text(
+        "---\ntype: T\nrelations:\n"
+        "  - {target: b, type: references}\n"
+        "  - {target: b, type: depends_on}\n"
+        "  - {target: /b.md, type: references, detail: duplicate}\n"
+        "---\nSee [B](b.md).\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.md").write_text("---\ntype: T\n---\nbody\n", encoding="utf-8")
+    edges = build_graph_data(Bundle.load(tmp_path))["edges"]
+    pair = [
+        e["data"] for e in edges
+        if e["data"]["source"] == "a" and e["data"]["target"] == "b"
+    ]
+    assert {e["label"] for e in pair} == {"references", "depends_on"}
+    assert all(e["origin"] == "relation" for e in pair)

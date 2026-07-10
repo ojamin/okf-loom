@@ -279,6 +279,39 @@ def test_search_returns_results(server_url: str, page) -> None:
     assert result_count >= 1, "search returned zero results for 'orders'"
 
 
+def test_static_file_graph_and_search_load_without_fetch(tmp_path: Path, page) -> None:
+    """A multi-file static build works when opened directly via ``file://``.
+
+    This is the browser-level contract that file-existence unit tests cannot
+    prove: adjacent JSON fetches are blocked by normal browser security.
+    """
+    from okf_loom import Bundle
+    from okf_loom.render import build_site
+
+    out_dir = tmp_path / "static-file-site"
+    bundle = Bundle.load(DEMO_BUNDLE)
+    build_site(bundle, out_dir, target="static")
+
+    page.goto((out_dir / "__graph.html").as_uri(), wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => window.__okfLoomGraphData && "
+        "Array.isArray(window.__okfLoomGraphData.nodes)",
+        timeout=10000,
+    )
+    node_count = page.evaluate("() => window.__okfLoomGraphData.nodes.length")
+    assert node_count == len(bundle.concepts)
+    assert "Failed to fetch" not in page.locator("body").inner_text()
+
+    page.goto(
+        (out_dir / "__search.html").as_uri() + "?q=orders",
+        wait_until="domcontentloaded",
+    )
+    results = page.locator(".okf-search-result")
+    results.first.wait_for(state="visible", timeout=10000)
+    assert results.count() >= 1
+    assert "Search corpus not available" not in page.locator("body").inner_text()
+
+
 def test_backlinks_show(server_url: str, page) -> None:
     """A referenced concept shows a non-empty 'Cited by' section.
 

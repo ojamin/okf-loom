@@ -94,6 +94,14 @@ The alias remains indexed by search and shown by the viewer, but
 `scripts/okf-loom discover` will not suggest links from incidental mentions of
 that alias. String aliases are discoverable by default.
 
+All five governed values use list outer shapes. `aliases` and `entities` may
+contain non-empty strings or their documented object forms; `provenance`,
+`citations`, and `relations` contain objects. Relation objects require non-empty
+string `target` and `type` fields. Provenance/citation objects require at least
+one renderable documented field. Validation reports malformed outer/entry
+shapes as warnings without dropping unknown keys or unknown object fields.
+Exact typed relation duplicates are reported by `(source, type, target)`.
+
 Example combining recommended + custom keys:
 
 ```yaml
@@ -257,6 +265,7 @@ Useful check subsets:
 
 ```bash
 scripts/okf-loom validate path/to/bundle --checks concept_required_keys,concept_recommended_keys
+scripts/okf-loom validate path/to/bundle --checks governed_metadata
 scripts/okf-loom validate path/to/bundle --checks timestamp_validity
 scripts/okf-loom validate path/to/bundle --profile producer   # recommended keys → ERROR
 ```
@@ -267,6 +276,8 @@ The check categories that touch frontmatter:
 |---|---|
 | `concept.missing_type` | `concept_required_keys` |
 | `concept.missing_recommended_keys` | `concept_recommended_keys` |
+| `frontmatter.*_malformed` | `governed_metadata` |
+| `relation.duplicate` | `governed_metadata` |
 | `concept.unknown_type` | `concept_recommended_keys` (WARNING) |
 | `concept.bad_timestamp` | `timestamp_validity` |
 | `concept.tag_normalization` | `tag_normalization` |

@@ -135,6 +135,20 @@ Current governed top-level keys include `relations`, `entities`, `aliases`, `pro
 okf-loom intentionally uses top-level governed keys rather than a single nested vendor container.
 Unknown keys are opaque and preserved.
 
+Governed keys activate by presence, but activation is not proof that their
+value is usable. Producers use the documented list/object shapes; validation
+emits stable warnings for malformed outer values or entries. These warnings do
+not widen OKF v0.1 hard conformance, but `validate --strict` promotes them.
+Unknown keys and unknown fields inside otherwise valid entries remain legal and
+round-trip unchanged.
+
+Typed relation occurrences are retained as authored. The graph also exposes a
+logical view de-duplicated by `(source, type, target)` for ranking and viewer
+consumers. Exact duplicates produce `relation.duplicate`; distinct relation
+types between the same concepts remain distinct logical edges. Relation
+mutators no-op on an existing `(source, type, target)` and fail closed rather
+than overwriting a malformed existing `relations` value.
+
 Example root declaration:
 
 ```yaml
@@ -266,12 +280,26 @@ Examples:
 scripts/okf-loom search docs-bundle "comment lifecycle"
 scripts/okf-loom search docs-bundle "agent loop" --mode semantic
 scripts/okf-loom search docs-bundle "studio" --mode hybrid
+scripts/okf-loom search docs-bundle "unrelated prose" --mode semantic --min-semantic-score 0.1
+scripts/okf-loom search docs-bundle "studio" --mode hybrid --hybrid-require both
 scripts/okf-loom search docs-bundle "#reference" --mode tag
 scripts/okf-loom search docs-bundle "" --mode relation --relation depends_on
 ```
 
 The HTTP `/__search` route uses lexical search with a server-side limit.
 Use the CLI for the other modes.
+SemanticLite keeps every positive overlap by default for compatibility. Its
+cosine score is query-dependent, and Hybrid's RRF score describes rank rather
+than calibrated relevance. `--min-semantic-score N` supplies an opt-in cosine
+floor for semantic results (and gates the semantic component before Hybrid
+fusion). `--hybrid-require {any,lexical,semantic,both}` selects which backend
+evidence a fused hit must carry. Hybrid JSON results expose
+`detail.matched_backends`, `component_scores`, and `component_ranks`.
+
+SemanticLite is typo/morphology retrieval, not a substitute for dense
+embeddings. A downstream LLM can rerank returned candidates but cannot recover
+a relevant concept that retrieval omitted. Dense retrieval remains an optional
+future `SearchBackend` integration rather than shipped current behavior.
 See [/reference/search_modes.md](/reference/search_modes.md).
 
 ## 7. Discovery, planning, update, repair, and authoring verbs
@@ -368,6 +396,14 @@ scripts/okf-loom serve docs-bundle --no-open --tunnel   # + public https URL (cl
 scripts/okf-loom build docs-bundle --target static --out /tmp/okf-docs-site
 scripts/okf-loom render docs-bundle --out /tmp/viz.html
 ```
+
+Static concept and index pages are ordinary server-rendered HTML. The graph and
+client-side search payloads are embedded as inert JSON in `__graph.html` and
+`__search.html`, so both features work when the directory is opened directly
+through `file://`; they do not fetch adjacent JSON files. Generated
+`__data/graph.json` and `__data/search.json` remain available to HTTP-hosted or
+external consumers. Optional graph/rendering libraries may still use the
+configured CDN unless the operator supplies local assets.
 
 The current viewer surface (binding for rebuilds): the root index renders as a dashboard — hero stat chips
 (concepts/types/links), an Explore-the-graph entry point, and every
@@ -653,9 +689,14 @@ A build-from-docs implementation must satisfy these acceptance checks:
 - `okf_loom.SPEC_VERSION == "0.1"`, and `okf_loom.LOOM_VERSION` matches the v1.0 runtime version printed by `scripts/okf-loom --version`.
 - `validate`, `info`, `graph`, `search`, `discover`, `plan`, `update`, `repair`, `index`, `log`, `init`, `bootstrap`, `import`, `serve`, `tunnel`, `wait`, `watch`, `token`, `comment-claim`, `comment-reply`, `comment-resolve`, `comment-list`, `presence`, `render`, `build`, `capabilities`, `upgrade`, `write-concept`, `set-frontmatter`, `link-add`, `entity-add`, `update-section`, and `replace-text` exist on the CLI surface.
 - Validation profiles and `--fail-on-broken-links` match this spec.
+- Governed metadata shape warnings and duplicate-relation findings are stable;
+  raw relation occurrences and logical edges remain separately available.
 - Search modes are dependency-free and restricted to the six current modes.
+- Semantic/Hybrid relevance gates are opt-in, and Hybrid results expose their
+  component evidence rather than presenting RRF as calibrated relevance.
 - `okf-loom.config.yaml` fails closed on unknown enum, invalid bool, and path escape while preserving unknown keys.
 - Mutators preserve unknown frontmatter, write atomically, and avoid duplicate/idempotency failures.
+- Static graph and search work from both HTTP and direct `file://` builds.
 - Live studio emits SSE/events, supports polling fallback, preserves no-refresh patching, and exposes the documented routes.
 - `comment_link` events are emitted when a resolve links activity ids.
 - `directives.jsonl`, `events.jsonl`, history, and idempotency caps prevent unbounded session growth.

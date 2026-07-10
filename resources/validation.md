@@ -12,6 +12,9 @@ images that exist but live outside the bundle root get an
 `asset.out_of_bundle` info, since the studio and static builds cannot
 display them), missing recommended keys, stale indexes, non-normalized
 tags, unknown capabilities, and wikilink conversion suggestions.
+Governed metadata shape problems (`aliases`, `entities`, `provenance`,
+`citations`, `relations`) and duplicate typed relations are warnings too, so
+they preserve base conformance but fail `--strict`.
 
 ## Commands
 

@@ -113,6 +113,7 @@ _HARD_FAILURE_REASONS_EXACT: frozenset[str] = frozenset({
     "rev_conflict",              # §9.3 collision: concurrent on-disk edit (INTENT2-001)
     "section_not_found",         # update._h_update_section: heading missing
     "text_not_found",            # update._h_replace_text: old text missing
+    "malformed_relations",       # update._h_add_relation: key is not a list
 })
 # These carry a free-form suffix after ":" (e.g. ``bad_args:'key'``,
 # ``unknown_op_kind:foo``); match by prefix.
@@ -419,6 +420,8 @@ def cmd_search(args: argparse.Namespace) -> int:
             type_filter=args.type,
             tag=args.tag,
             limit=args.limit,
+            semantic_min_score=getattr(args, "min_semantic_score", None),
+            hybrid_require=getattr(args, "hybrid_require", "any"),
         )
         if mode == SearchMode.RELATION:
             kwargs["relation"] = getattr(args, "relation", None)
@@ -1882,6 +1885,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--type", dest="type", help="Filter by concept type")
     sp.add_argument("--tag", help="Filter by tag")
     sp.add_argument("--limit", type=int, default=20)
+    sp.add_argument(
+        "--min-semantic-score", type=float,
+        help="Opt-in SemanticLite relevance threshold in [0,1] (semantic/hybrid)",
+    )
+    sp.add_argument(
+        "--hybrid-require", choices=("any", "lexical", "semantic", "both"),
+        default="any",
+        help="Require evidence from selected backend(s) before Hybrid RRF",
+    )
     sp.add_argument("--relation", help="Relation type filter (relation mode)")
     sp.add_argument("--source", help="Source concept id filter (relation mode)")
     sp.add_argument("--target", help="Target concept id filter (relation mode)")

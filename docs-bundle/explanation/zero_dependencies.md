@@ -146,26 +146,20 @@ fuzzy-semantic layer that helps the agent find candidates, and it
 costs zero dependencies. The `HybridBackend` fuses lexical and
 SemanticLite by Reciprocal Rank Fusion (k=60), again dependency-free.
 
-## The agent is the true semantic engine
+## Retrieval and agent reasoning are separate stages
 
-The deepest workaround is structural rather than algorithmic.
-okf-loom assumes that *the agent itself* — an LLM running in opencode /
-Claude Code / Codex / a custom harness — is the best true-semantic
-engine available. The agent reads the bundle, reasons about it, and
-writes back; a local embedding backend would be redundant next to a
-model that already understands the content.
+An LLM can reason well about candidates it receives, but it cannot rerank a
+relevant concept that retrieval omitted. SemanticLite is intentionally a cheap
+typo/morphology candidate finder, not a claim of dense semantic equivalence.
+Callers can impose a SemanticLite score floor or require component evidence in
+Hybrid; deployments whose product goal is broad paraphrase recall should
+evaluate an optional dense `SearchBackend` against a labelled query set.
 
-> This is the key insight from
-> [`/explanation/research.md`](/explanation/research.md): a local dense-embedding backend was prototyped and
-> then **removed**, because the agent is itself the semantic engine.
-> SemanticLite stays as a cheap candidate-finder; the heavy semantic
-> work happens in the agent, not in okf-loom.
-
-This is also why the `SearchBackend` Protocol exists: a user who
-genuinely needs a local embedding backend (an air-gapped deployment
-with no agent, a very large corpus, a specific retrieval task) can
-implement one behind the same `--mode` dispatch and register it. The
-constraint is on the *default*, not on the *capability*. See
+The `SearchBackend` Protocol keeps that extension point explicit: a user who
+needs a local embedding backend (broad paraphrase retrieval, an air-gapped
+deployment, a very large corpus, or a specific retrieval task) can implement
+one behind the same interface. The constraint is on the dependency-free
+default, not on the legitimacy of dense retrieval. See
 [capabilities.md](/reference/capabilities.md) for the extension model.
 
 # Where the one optional extra fits

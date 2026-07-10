@@ -247,6 +247,32 @@ def test_graph_typed_relation_link_form_target_resolves(tmp_path: Path) -> None:
     assert g.unresolved == []
 
 
+def test_graph_logical_edges_dedupe_by_source_type_target(tmp_path: Path) -> None:
+    """Raw occurrences survive, while logical consumers get stable edges."""
+    (tmp_path / "a.md").write_text(
+        "---\n"
+        "type: T\n"
+        "relations:\n"
+        "  - {target: b, type: references, detail: first}\n"
+        "  - {target: /b.md, type: references, detail: duplicate}\n"
+        "  - {target: b, type: depends_on}\n"
+        "---\n"
+        "See [B](b.md) and [B again](b.md).\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.md").write_text("---\ntype: T\n---\nbody\n", encoding="utf-8")
+    graph = Bundle.load(tmp_path).graph()
+    occurrences = [e for e in graph.edges if e.source == ("a",)]
+    logical = [e for e in graph.logical_edges() if e.source == ("a",)]
+    assert len(occurrences) == 5
+    assert len(logical) == 3
+    assert [(e.origin, e.logical_type) for e in logical] == [
+        ("markdown", ""),
+        ("relation", "references"),
+        ("relation", "depends_on"),
+    ]
+
+
 def test_graph_unresolved_collected(tiny_bad_bundle: Path) -> None:
     """Broken-link targets land in ``graph.unresolved``."""
     b = Bundle.load(tiny_bad_bundle)

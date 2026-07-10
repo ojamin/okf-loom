@@ -283,6 +283,45 @@ def test_add_relation_idempotent(tmp_path: Path) -> None:
     assert s2["results"][0][1]["reason"] == "already_related"
 
 
+def test_add_relation_idempotency_normalizes_target_forms(tmp_path: Path) -> None:
+    root = _make_bundle(tmp_path)
+    a = root / "a.md"
+    a.write_text(
+        "---\ntype: T\ntitle: A\nrelations:\n"
+        "  - {target: /b.md, type: references}\n---\nbody\n",
+        encoding="utf-8",
+    )
+    b = Bundle.load(root)
+    result = apply_plan(b, _plan([
+        UpdateOp("add_relation", ("a",), {
+            "target_concept_id": "b", "relation_type": "references",
+        }),
+    ]))
+    assert result["applied"] == 0
+    assert result["results"][0][1]["reason"] == "already_related"
+    assert len(b.concept_at("a").frontmatter["relations"]) == 1
+
+
+def test_add_relation_fails_closed_on_malformed_existing_value(tmp_path: Path) -> None:
+    """A mutator must not overwrite malformed hand-authored governed data."""
+    root = _make_bundle(tmp_path)
+    a = root / "a.md"
+    a.write_text(
+        "---\ntype: T\ntitle: A\nrelations: {target: legacy}\n---\nbody\n",
+        encoding="utf-8",
+    )
+    b = Bundle.load(root)
+    before = a.read_bytes()
+    result = apply_plan(b, _plan([
+        UpdateOp("add_relation", ("a",), {
+            "target_concept_id": "b", "relation_type": "references",
+        }),
+    ]))
+    assert result["applied"] == 0
+    assert result["results"][0][1]["reason"] == "malformed_relations"
+    assert a.read_bytes() == before
+
+
 # --- append_body_section ----------------------------------------------------
 
 

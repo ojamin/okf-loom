@@ -1,9 +1,9 @@
 /* OKF static-build client-side search (current spec §9).
  *
  * Loaded only on the static search page (__search.html) when the bundle was
- * built with `--target static`. Reads `?q=` from the URL, fetches the
- * build-time corpus at __data/search.json (resolved relative to the page so
- * it works regardless of where the static site is hosted), tokenizes the
+ * built with `--target static`. Reads `?q=` from the URL, consumes the inert
+ * corpus in the page (file:// safe), with __data/search.json as a fallback
+ * for older/hosted builds, tokenizes the
  * query, scores each corpus entry by term frequency with field weights, and
  * renders the results into the existing results container.
  *
@@ -296,6 +296,23 @@
     return root + "__data/search.json";
   }
 
+  function acquireCorpus() {
+    var inline = document.getElementById("okf-search-data");
+    if (inline) {
+      try {
+        var raw = inline.content ? inline.content.textContent : inline.textContent;
+        return Promise.resolve(JSON.parse(raw || "[]"));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    }
+    return fetch(corpusUrl(), { headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      });
+  }
+
   // ---------------------------------------------------------------------
   // Initial render from ?q=. No query yet → friendly prompt (the form is
   // already visible and the user just hasn't typed). Otherwise fetch the
@@ -311,11 +328,7 @@
     return;
   }
 
-  fetch(corpusUrl(), { headers: { "Accept": "application/json" } })
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  acquireCorpus()
     .then(function (data) {
       // Accept either a bare array (current build) or a wrapper
       // {entries: [...]} (forward-compat). Anything else → empty.

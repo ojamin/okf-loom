@@ -471,39 +471,39 @@ def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, An
             }
         })
 
-    # Dedupe edges by (source, target), merging labels on collision.
-    # graph.edges orders body links BEFORE relation edges, so when a concept
-    # has both a body link AND a typed relation to the same target, the
-    # relation label must overwrite/upgrade the body-link label.
+    # Consume the model's logical-edge view. Raw ``graph.edges`` retains every
+    # authored occurrence; logical_edges() de-duplicates by
+    # (source, relation-type, target), preserving distinct typed relations.
     edges: list[dict[str, Any]] = []
-    edge_index: dict[tuple[str, str], int] = {}
     backlinks: dict[str, list[str]] = {}
-    for link in graph.edges:
+    logical_links = graph.logical_edges()
+    typed_pairs = {
+        (link.source, link.target)
+        for link in logical_links
+        if link.origin == "relation"
+    }
+    for link in logical_links:
         if link.target is None:
+            continue
+        # Preserve the viewer's established "typed relation upgrades a body
+        # link" contract. The model still exposes both logical edges; this
+        # projection suppresses only the generic markdown edge when one or
+        # more typed edges describe the same source/target pair.
+        if link.origin == "markdown" and (link.source, link.target) in typed_pairs:
             continue
         src = concept_id_to_str(link.source)
         tgt = concept_id_to_str(link.target)
         if src == tgt:
             continue
-        key = (src, tgt)
-        # P1-36: typed-relation detection now uses the SAME predicate as
-        # the link-list chip renderer (:func:`_render_link_list`) — both
-        # consult :func:`_is_typed_relation_target_raw` so the
-        # discriminator is consistent within render.py. (The clean fix
-        # lives in model.py: give :class:`Link` an ``origin`` field; that
-        # is owned by another bundle.)
-        is_typed_relation = _is_typed_relation_target_raw(link.target_raw)
         # Preserve edge label so typed-relation types (references, written_by,
         # etc.) are visible in the graph view.
         has_label = link.label and not link.label.startswith("/")
-        if key in edge_index:
-            idx = edge_index[key]
-            # Merge: typed-relation labels take precedence over body-link labels
-            if is_typed_relation and has_label:
-                edges[idx]["data"]["label"] = link.label
-            continue
-        edge_index[key] = len(edges)
-        edge_data: dict[str, Any] = {"id": f"{src}__{tgt}", "source": src, "target": tgt}
+        edge_data: dict[str, Any] = {
+            "id": f"edge-{len(edges)}",
+            "source": src,
+            "target": tgt,
+            "origin": link.origin,
+        }
         if has_label:
             edge_data["label"] = link.label
         edges.append({"data": edge_data})
@@ -964,9 +964,12 @@ def _emit_site(
     _atomic_write_text(root / "index.html", html)
 
     # Full-page graph view + search page (so internal links to them resolve).
-    graph_html = _render_graph_page(bundle, mode=mode, name=name, config=config)
+    graph_html = _render_graph_page(
+        bundle, mode=mode, name=name, config=config, graph_data=graph_data,
+    )
     _atomic_write_text(root / "__graph.html", graph_html)
-    # Search results page (degraded: static has no live search backend).
+    # Search results page. Static mode embeds its build-time corpus so it works
+    # under both HTTP hosting and direct file:// browsing.
     search_html = _render_search_page(
         bundle, mode=mode, name=name, config=config,
         query="", results=[],
@@ -2187,6 +2190,13 @@ def _render_search_page(
             f'<script src="{static_prefix}/wiki.js" defer></script>\n'
             f'<script src="{static_prefix}/static-search.js" defer></script>'
         )
+        search_data_inline = (
+            '<template id="okf-search-data">'
+            + _json_for_script(_search_corpus_json(bundle))
+            + "</template>"
+        )
+    else:
+        search_data_inline = ""
 
     # P2-61: shared topbar nav. Search page lives at the bundle root, so
     # the form posts back to itself and Graph/Index are root-relative.
@@ -2221,6 +2231,7 @@ def _render_search_page(
         .replace("__WIKI_CSS_LINK__", css_link)
         .replace("__WIKI_JS_LINK__", js_link)
         .replace("__RENDERERS_JS_LINK__", renderers_link)
+        .replace("__SEARCH_DATA_INLINE__", search_data_inline)
         .replace("__NAV_HTML__", nav_html)
         .replace("__QUERY_ESCAPED__", _esc_attr_qs(query))
         .replace("__QUERY_HTML__", _esc(query))
@@ -2242,10 +2253,19 @@ def _render_graph_page(
     mode: str,
     name: str,
     config: dict[str, Any],
+    graph_data: dict[str, Any] | None = None,
 ) -> str:
     template = load_template("graph_page.html", bundle)
     static_prefix = "/__static" if mode in ("serve", "spa") else "__static"
-    data_url = "/__data/graph.json" if mode in ("serve", "spa") else "__data/graph.json"
+    data_url = "/__data/graph.json" if mode in ("serve", "spa") else ""
+    graph_data_inline = ""
+    if mode == "static":
+        payload = graph_data if graph_data is not None else build_graph_data(bundle, name=name)
+        graph_data_inline = (
+            '<template id="okf-graph-data">'
+            + _json_for_script(payload)
+            + "</template>"
+        )
     back_link = "/" if mode in ("serve", "spa") else "index.html"
     initial_theme = config.get("theme") or "light"
     initial_layout = config.get("default_layout") or "cose"
@@ -2289,6 +2309,7 @@ def _render_graph_page(
         .replace("__INITIAL_THEME_BUTTON__", _theme_button_html(initial_theme))
         .replace("__INITIAL_LAYOUT__", initial_layout)
         .replace("__GRAPH_DATA_URL__", data_url)
+        .replace("__GRAPH_DATA_INLINE__", graph_data_inline)
         .replace("__BACK_LINK__", back_link)
     )
 

@@ -10,6 +10,8 @@ All six modes are dependency-free (`lexical`, `semantic`, `hybrid`,
 scripts/okf-loom search docs-bundle "customer order" --mode lexical
 scripts/okf-loom search docs-bundle "customer order" --mode semantic
 scripts/okf-loom search docs-bundle "customer order" --mode hybrid
+scripts/okf-loom search docs-bundle "natural-language question" --mode semantic --min-semantic-score 0.1
+scripts/okf-loom search docs-bundle "customer order" --mode hybrid --hybrid-require both
 scripts/okf-loom search docs-bundle "orders" --mode tag
 scripts/okf-loom search docs-bundle "Order" --mode entity
 scripts/okf-loom search docs-bundle "" --mode relation --relation depends_on
@@ -21,6 +23,12 @@ embedding backend. See
 [`docs-bundle/reference/config_yaml.md`](../docs-bundle/reference/config_yaml.md)
 for every config key, and [`studio-agent-loop.md`](studio-agent-loop.md)
 for the serve-time collaboration loop.
+
+SemanticLite retains every positive overlap by default. Use
+`--min-semantic-score` for an explicit no-match floor. Hybrid RRF is a rank
+score, not calibrated relevance; JSON results expose matched backends and
+component scores/ranks, and `--hybrid-require` can require lexical, semantic,
+or both forms of evidence.
 
 ## Discovery, plans, and repair
 

@@ -15,10 +15,9 @@ timestamp: "2026-06-29T00:00:00Z"
 > portable `vectors.jsonl` reader, and an on-disk SQLite FTS table — were
 > prototyped and **later removed**. The surviving search story
 > is fully zero-dependency: lexical (BM25) + fuzzy-semantic (`SemanticLite`)
-> + hybrid (RRF fusion). The reasoning: the agent (an LLM in opencode /
-> Claude Code / Codex) is itself the best true-semantic engine, so a local
-> embedding backend is redundant; `SemanticLite` stays as a cheap
-> fuzzy-semantic layer that helps the agent find candidates. Read the
+> + hybrid (RRF fusion). `SemanticLite` stays as a cheap typo/morphology
+> candidate layer, while dense retrieval remains a legitimate optional
+> integration when broad paraphrase recall is a product requirement. Read the
 > dense/`[semantic]`/`[llm]`/`vector-index`/`sqlite-fts` passages below as
 > "explored, then dropped," not as the current runtime surface. The current
 > surface lives in `SKILL.md`, `resources/advanced-operations.md`, and

@@ -218,6 +218,24 @@ def test_search_semantic_returns_one(tiny_good_bundle: Path) -> None:
     assert cid == "tables/users", f"unexpected top concept_id: {cid!r}"
 
 
+def test_search_cli_relevance_flags_emit_no_match_for_irrelevant_query() -> None:
+    docs = Path(__file__).resolve().parent.parent / "docs-bundle"
+    query = "How do I bake sourdough bread in a Dutch oven?"
+    rc, out, err = _capture([
+        "search", str(docs), query, "--mode", "semantic",
+        "--min-semantic-score", "0.1", "--format", "json",
+    ])
+    assert rc == 0, err
+    assert json.loads(out) == []
+
+    rc, out, err = _capture([
+        "search", str(docs), query, "--mode", "hybrid",
+        "--hybrid-require", "lexical", "--format", "json",
+    ])
+    assert rc == 0, err
+    assert json.loads(out) == []
+
+
 def test_search_tag_mode(tiny_good_bundle: Path) -> None:
     rc, out, _ = _capture([
         "search", str(tiny_good_bundle), "#users", "--mode", "tag",
@@ -929,6 +947,7 @@ def _result(reasons: list[str | None], *, applied_count: int = 0) -> dict:
 _HARD_FAILURE_REASONS_FOR_TEST = [
     "concept_not_found",
     "target_concept_not_found",
+    "malformed_relations",
     # Suffixed reasons carry free-form detail after ':'; cover the prefix.
     "bad_args:'key'",
     "bad_args:invalid value for foo",

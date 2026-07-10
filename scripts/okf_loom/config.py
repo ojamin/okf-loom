@@ -106,8 +106,8 @@ _ALLOWED_SEARCH_MODES: frozenset[str] = frozenset({
 # SqliteFtsBackend) and their config knobs (``search.semantic_provider`` /
 # ``search.lexical_provider`` / ``search.dense_model``) were removed —
 # semantic search is now always zero-dep SemanticLite, lexical is always
-# BM25. The agent (an LLM in opencode / Claude Code / Codex) is itself the
-# best true-semantic engine, so a local embedding backend was redundant.
+# BM25. A dense backend is not shipped, while remaining a legitimate optional
+# SearchBackend for broad paraphrase recall.
 # ``default_mode`` is the only surviving ``search:`` key.
 # ``validate.default_profile`` mirrors ``validate._PROFILE_REMAPS`` keys.
 _ALLOWED_VALIDATE_PROFILES: frozenset[str] = frozenset({

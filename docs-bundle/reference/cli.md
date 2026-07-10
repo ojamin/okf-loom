@@ -137,11 +137,17 @@ weak hierarchy signals, disconnected components, and orphan concepts.
 ```bash
 scripts/okf-loom search <bundle> [query] [--mode {lexical,semantic,hybrid,tag,entity,relation}]
             [--type TYPE] [--tag TAG] [--limit N]
+            [--min-semantic-score N]
+            [--hybrid-require {any,lexical,semantic,both}]
             [--relation RELATION] [--source SOURCE] [--target TARGET]
             [--format {text,json,md,dot}]
 ```
 
 `query` is optional in `relation` mode (edge filters suffice).
+`--min-semantic-score` is an opt-in cosine floor for SemanticLite and is
+applied before RRF in Hybrid. `--hybrid-require` selects which component
+backend(s) must match; `any` preserves the legacy union. JSON Hybrid results
+include matched backends plus native component scores and ranks.
 Full mode-by-mode detail lives in [search_modes.md](/reference/search_modes.md).
 
 # discover

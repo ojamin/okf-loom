@@ -222,6 +222,50 @@ def test_semantic_empty_query(tiny_good_bundle: Path) -> None:
     assert search_bundle(b, "", mode=SearchMode.SEMANTIC, limit=10) == []
 
 
+def test_semantic_opt_in_threshold_rejects_irrelevant_natural_language() -> None:
+    """A caller-selected cosine floor provides a real no-match contract.
+
+    Legacy SemanticLite intentionally keeps every positive trigram overlap;
+    the opt-in threshold removes those low-signal candidates.
+    """
+    docs = Path(__file__).resolve().parent.parent / "docs-bundle"
+    b = Bundle.load(docs)
+    query = "How do I bake sourdough bread in a Dutch oven?"
+    legacy = search_bundle(b, query, mode=SearchMode.SEMANTIC, limit=20)
+    gated = search_bundle(
+        b, query, mode=SearchMode.SEMANTIC,
+        semantic_min_score=0.1, limit=20,
+    )
+    assert legacy, "probe must retain incidental legacy trigram hits"
+    assert max(r.score for r in legacy) < 0.1
+    assert gated == []
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_id", "top_n"),
+    [
+        (
+            "launch the collaborative reading interface and leave feedback",
+            ("explanation", "live_studio_design"),
+            3,
+        ),
+        (
+            "what happens from a reader note until the assistant finishes the requested edit",
+            ("tutorials", "author_with_agent"),
+            3,
+        ),
+    ],
+)
+def test_semantic_real_paraphrases_retain_relevant_candidates(
+    query: str, expected_id: tuple[str, ...], top_n: int,
+) -> None:
+    docs = Path(__file__).resolve().parent.parent / "docs-bundle"
+    results = search_bundle(
+        Bundle.load(docs), query, mode=SearchMode.SEMANTIC, limit=top_n,
+    )
+    assert expected_id in [r.concept_id for r in results]
+
+
 def test_hybrid_works_with_rrf(tiny_good_bundle: Path) -> None:
     """HYBRID mode works with RRF fusion (no extra)."""
     b = Bundle.load(tiny_good_bundle)
@@ -267,6 +311,51 @@ def test_hybrid_backend_rrf_fusion() -> None:
     results = hybrid.search("orders", limit=5)
     assert len(results) > 0
     assert all(r.source_backend == "hybrid" for r in results)
+
+
+def test_hybrid_exposes_component_scores_ranks_and_matched_backends() -> None:
+    b = Bundle.load("samples/demo_bundle")
+    results = search_bundle(b, "orders", mode=SearchMode.HYBRID, limit=5)
+    assert results
+    for result in results:
+        detail = result.detail
+        assert detail["fusion"] == "rrf"
+        assert detail["matched_backends"]
+        assert set(detail["component_scores"]) == set(detail["matched_backends"])
+        assert set(detail["component_ranks"]) == set(detail["matched_backends"])
+
+
+def test_hybrid_backend_requirement_can_return_trustworthy_no_match() -> None:
+    docs = Path(__file__).resolve().parent.parent / "docs-bundle"
+    query = "How do I bake sourdough bread in a Dutch oven?"
+    legacy = search_bundle(
+        Bundle.load(docs), query, mode=SearchMode.HYBRID, limit=20,
+    )
+    lexical_evidence_only = search_bundle(
+        Bundle.load(docs), query, mode=SearchMode.HYBRID,
+        hybrid_require="lexical", limit=20,
+    )
+    assert legacy
+    assert all(
+        r.detail["matched_backends"] == ["semantic-lite"] for r in legacy
+    )
+    assert lexical_evidence_only == []
+
+
+def test_search_relevance_option_validation(tiny_good_bundle: Path) -> None:
+    b = Bundle.load(tiny_good_bundle)
+    with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+        search_bundle(
+            b, "users", mode=SearchMode.SEMANTIC, semantic_min_score=1.1,
+        )
+    with pytest.raises(ValueError, match="only valid in semantic or hybrid"):
+        search_bundle(
+            b, "users", mode=SearchMode.LEXICAL, semantic_min_score=0.1,
+        )
+    with pytest.raises(ValueError, match="only valid in hybrid"):
+        search_bundle(
+            b, "users", mode=SearchMode.SEMANTIC, hybrid_require="both",
+        )
 
 
 # --- empty / stopword / limit ------------------------------------------------
@@ -662,6 +751,26 @@ def test_relation_mode_via_discrimination_and_edge_shape() -> None:
             assert e["type"]  # typed-relation edges carry a non-empty type
         else:
             assert e["type"] == ""  # markdown edges have empty type
+
+
+def test_relation_mode_uses_logical_edges_not_duplicate_occurrences(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "a.md").write_text(
+        "---\ntype: T\nrelations:\n"
+        "  - {target: b, type: references}\n"
+        "  - {target: /b.md, type: references, detail: duplicate}\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.md").write_text("---\ntype: T\n---\nbody\n", encoding="utf-8")
+    results = search_bundle(
+        Bundle.load(tmp_path), "", mode=SearchMode.RELATION,
+        relation="references", limit=10,
+    )
+    assert len(results) == 1
+    assert results[0].score == 1.0
+    assert len(results[0].detail["edges"]) == 1
 
 
 def test_relation_mode_relation_filter_excludes_markdown() -> None:

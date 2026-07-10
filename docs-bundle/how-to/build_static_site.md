@@ -42,7 +42,9 @@ scripts/okf-loom build path/to/bundle --target static --out dist/
 ```
 
 The `dist/` directory now contains the full site: rendered HTML pages, a
-copy of the graph data, and the viewer assets.
+copy of the graph/search data, and the viewer assets. Static graph and search
+pages also carry inert embedded copies of their data so direct-file browsing
+does not depend on browser-blocked `fetch()` calls.
 
 The other targets take the same flags:
 
@@ -53,7 +55,13 @@ scripts/okf-loom build path/to/bundle --target single-file --out dist/viz.html
 
 # Step 3: Preview the build locally
 
-Any static file server works.
+Open `dist/index.html` directly to exercise the `file://` contract. Concept
+pages, graph data, and static search all load from the directory without an
+HTTP server. Graph/rendering enhancement libraries still follow the viewer's
+CDN configuration, so use local overrides when the environment is fully
+air-gapped.
+
+For an HTTP-hosted preview, any static file server works.
 
 ```bash
 python3 -m http.server --directory dist 8000
@@ -93,7 +101,9 @@ non-interactively, for example in a CI job.
 
 # Step 5: Ship the site
 
-The `dist/` directory is fully self-contained; copy it anywhere.
+The `dist/` directory contains all generated pages and bundle data; copy it
+anywhere. Optional CDN-configured enhancement libraries are external unless
+you provide local viewer assets.
 
 For GitHub Pages, drop it into the `gh-pages` branch or point Pages at the
 build output of your CI workflow.

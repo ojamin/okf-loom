@@ -101,10 +101,23 @@ character-trigram TF cosine over a weighted per-concept profile.
 | Profile string | `title ×3 + description ×2 + type + headings + tags + entity labels + aliases` (the last two only if `okf.cap.entities` / `okf.cap.aliases` are active). |
 | Score | `α * cosine(tokens) + (1-α) * cosine(trigrams)`, `α=0.6`. |
 
-SemanticLite is the cheap fuzzy-semantic layer that helps an agent
-find candidate concepts. The agent itself (an LLM in opencode /
-Claude Code / Codex) is the best true-semantic engine, so a local
-embedding backend would be redundant.
+SemanticLite is the cheap fuzzy-semantic layer that helps an agent find
+candidate concepts. Any positive token or trigram overlap is retained by
+default for backward compatibility, so a positive score means similarity, not
+an automatic relevance judgement. Use an explicit floor when false positives
+must become a trustworthy no-match:
+
+```bash
+scripts/okf-loom search path/to/bundle "natural-language question" \
+  --mode semantic --min-semantic-score 0.1
+```
+
+The value is a SemanticLite cosine threshold in `[0,1]`; tune it against
+labelled relevant, paraphrase, and irrelevant queries for the bundle. A
+downstream LLM can rerank returned candidates but cannot recover a relevant
+concept that retrieval did not return. Dense embeddings are therefore a
+legitimate optional `SearchBackend` when paraphrase recall is a product
+requirement, though no dense provider ships in the six current modes.
 
 # `hybrid` — RRF fusion
 
@@ -122,6 +135,17 @@ rrf(d) = Σ_backend 1 / (k + rank_backend(d))    with k = 60
 Concepts missing from a backend contribute 0 from that backend.
 Sort by `(-rrf, concept_id)`. A successful hybrid query (at least
 one match) activates `okf.cap.search_hybrid` for the bundle.
+
+RRF is a rank-fusion value, not calibrated relevance. Hybrid results include
+the evidence needed to interpret it:
+
+- `detail.matched_backends`: `lexical`, `semantic-lite`, or both;
+- `detail.component_scores`: each matching backend's native score;
+- `detail.component_ranks`: each matching backend's 1-based rank.
+
+`--min-semantic-score N` gates SemanticLite candidates before fusion.
+`--hybrid-require any` preserves the legacy union; `lexical`, `semantic`, or
+`both` require that evidence before a hit can enter the RRF result set.
 
 # `entity` — entity/alias match
 
@@ -161,6 +185,8 @@ Honours `okf.cap.typed_relations`.
 | `--type TYPE` | Every mode | Keep only concepts whose `type` equals this string (exact match). |
 | `--tag TAG` | Every mode | Keep only concepts carrying this tag (case-insensitive). |
 | `--limit N` | Every mode | Maximum number of results (default `20`). |
+| `--min-semantic-score N` | `semantic`, `hybrid` | Opt-in SemanticLite cosine floor in `[0,1]`; applied before Hybrid RRF. |
+| `--hybrid-require MODE` | `hybrid` | Evidence policy: `any` (default), `lexical`, `semantic`, or `both`. |
 
 # Result shape
 
@@ -168,11 +194,17 @@ Honours `okf.cap.typed_relations`.
 {
   "concept_id": "tables/orders",
   "title": "Orders",
-  "score": 12.41,
+  "score": 0.0325,
   "snippets": ["…one row per completed customer order…"],
-  "source_backend": "lexical",
+  "source_backend": "hybrid",
   "matched_tags": [],
-  "description": "One row per completed customer order."
+  "description": "One row per completed customer order.",
+  "detail": {
+    "matched_backends": ["lexical", "semantic-lite"],
+    "component_scores": {"lexical": 12.41, "semantic-lite": 0.72},
+    "component_ranks": {"lexical": 1, "semantic-lite": 2},
+    "fusion": "rrf"
+  }
 }
 ```
 
@@ -185,6 +217,7 @@ Honours `okf.cap.typed_relations`.
 | `source_backend` | `lexical` / `semantic-lite` / `hybrid` / `tag`. |
 | `matched_tags` | Populated in tag mode; empty otherwise. |
 | `description` | Back-filled from the content index for richer result context. |
+| `detail` | Optional backend evidence. Hybrid includes matched backends, native component scores/ranks, and `fusion: rrf`. |
 
 # `SearchBackend` Protocol
 

@@ -377,6 +377,15 @@
   // ---- Bundle acquisition ------------------------------------------------
   function acquireBundle() {
     if (window.BUNDLE) return Promise.resolve(window.BUNDLE);
+    var inline = document.getElementById("okf-graph-data");
+    if (inline) {
+      try {
+        var raw = inline.content ? inline.content.textContent : inline.textContent;
+        return Promise.resolve(JSON.parse(raw || "{}"));
+      } catch (e) {
+        return Promise.reject(new Error("invalid inline graph data: " + e.message));
+      }
+    }
     if (!DATA_URL) return Promise.reject(new Error("no bundle data"));
     return fetch(DATA_URL).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -384,7 +393,12 @@
     });
   }
 
-  acquireBundle().then(init).catch(function (err) {
+  acquireBundle().then(function (bundle) {
+    // Read-only diagnostic seam used by file:// browser proofs. The graph's
+    // live mutable API remains window.__okfLoomGraph after Cytoscape mounts.
+    window.__okfLoomGraphData = bundle;
+    init(bundle);
+  }).catch(function (err) {
     // Surface the stack in the console — a swallowed init error is
     // undebuggable from the error banner alone.
     try { console.error("[okf-graph] init failed:", err && err.stack ? err.stack : err); } catch (e2) {}

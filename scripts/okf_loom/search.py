@@ -7,12 +7,10 @@ Three backends behind one interface, **all zero-dependency**:
     :class:`SemanticLiteBackend` — dependency-free fuzzy-semantic ranker
                                    (token-cosine + char-trigram cosine over a
                                    weighted concept profile). The default for
-                                   ``--mode semantic``. The agent (an LLM in
-                                   opencode / Claude Code / Codex) is itself
-                                   the best true-semantic engine, so a local
-                                   embedding backend would be redundant; this
-                                   lightweight layer helps the agent find
-                                   candidates cheaply without one.
+                                   ``--mode semantic``. This lightweight layer
+                                   handles typo/morphology candidate retrieval;
+                                   broad paraphrase recall remains a legitimate
+                                   optional dense-backend use case.
     :class:`HybridBackend`       — Reciprocal Rank Fusion (k=60) of
                                    Lexical + SemanticLite.
 
@@ -102,6 +100,9 @@ class SearchResult:
             (``"lexical"`` | ``"semantic-lite"`` | ``"hybrid"`` | ``"tag"``).
         matched_tags: subset of the concept's own tags that matched the query
             (populated in tag mode; empty otherwise).
+        detail: optional backend evidence. Hybrid results expose component
+            scores, component ranks, and the backends that matched so callers
+            never have to interpret an RRF rank score as calibrated relevance.
     """
 
     concept_id: ConceptId
@@ -428,6 +429,10 @@ class LexicalBackend:
                     snippets=snips,
                     source_backend="lexical",
                     matched_tags=[],
+                    detail={
+                        "matched_backends": ["lexical"],
+                        "component_scores": {"lexical": score},
+                    },
                 )
             )
         return results
@@ -566,19 +571,19 @@ class SemanticLiteBackend:
         q_trigram_tf = _char_trigrams(query)
         alpha = self.token_weight
 
-        scored: list[tuple[float, ConceptId]] = []
+        scored: list[tuple[float, ConceptId, float, float]] = []
         for cid in self._doc_ids:
             tok_sim = _cosine_sparse(q_token_tf, self._token_tf[cid])
             tri_sim = _cosine_sparse(q_trigram_tf, self._trigram_tf[cid])
             score = alpha * tok_sim + (1.0 - alpha) * tri_sim
             if score > 0.0:
-                scored.append((score, cid))
+                scored.append((score, cid, tok_sim, tri_sim))
 
         scored.sort(key=lambda x: (-x[0], x[1]))
         cap = limit if limit and limit > 0 else len(scored)
         results: list[SearchResult] = []
         q_terms = list(q_token_tf.keys())
-        for score, cid in scored[:cap]:
+        for score, cid, tok_sim, tri_sim in scored[:cap]:
             concept = self._concepts[cid]
             snips = _extract_snippets(self._body_text[cid], q_terms)
             if not snips:
@@ -590,6 +595,14 @@ class SemanticLiteBackend:
                     score=score,
                     snippets=snips,
                     source_backend="semantic-lite",
+                    detail={
+                        "matched_backends": ["semantic-lite"],
+                        "component_scores": {
+                            "semantic-lite": score,
+                            "token_cosine": tok_sim,
+                            "trigram_cosine": tri_sim,
+                        },
+                    },
                 )
             )
         return results
@@ -619,15 +632,29 @@ class HybridBackend:
         semantic: SearchBackend,
         *,
         k: int = 60,
+        semantic_min_score: float | None = None,
+        require_backend: str = "any",
     ) -> None:
         self._lexical = lexical
         self._semantic = semantic
         self.k = k
+        if semantic_min_score is not None and not 0.0 <= semantic_min_score <= 1.0:
+            raise ValueError("semantic_min_score must be between 0.0 and 1.0")
+        if require_backend not in {"any", "lexical", "semantic", "both"}:
+            raise ValueError(
+                "require_backend must be one of: any, lexical, semantic, both"
+            )
+        self.semantic_min_score = semantic_min_score
+        self.require_backend = require_backend
 
     def search(self, query: str, *, limit: int) -> list[SearchResult]:
         n = max(limit * 5, 50)
         lex_results = self._lexical.search(query, limit=n)
         sem_results = self._semantic.search(query, limit=n)
+        if self.semantic_min_score is not None:
+            sem_results = [
+                r for r in sem_results if r.score >= self.semantic_min_score
+            ]
 
         # Build rank maps (1-indexed).
         lex_rank: dict[ConceptId, int] = {}
@@ -638,6 +665,12 @@ class HybridBackend:
             sem_rank[r.concept_id] = i + 1
 
         all_ids = set(lex_rank.keys()) | set(sem_rank.keys())
+        if self.require_backend == "lexical":
+            all_ids &= set(lex_rank)
+        elif self.require_backend == "semantic":
+            all_ids &= set(sem_rank)
+        elif self.require_backend == "both":
+            all_ids &= set(lex_rank) & set(sem_rank)
         k = self.k
         scored: list[tuple[float, ConceptId]] = []
         # P3-5: build the cid → title map ONCE in O(N). The previous loop
@@ -659,6 +692,8 @@ class HybridBackend:
         # fused result carries non-empty snippets when at least one backend
         # produced them.
         snippet_map: dict[ConceptId, list[str]] = {}
+        lex_by_id = {r.concept_id: r for r in lex_results}
+        sem_by_id = {r.concept_id: r for r in sem_results}
         for cid in all_ids:
             rrf = 0.0
             if cid in lex_rank:
@@ -675,16 +710,35 @@ class HybridBackend:
 
         scored.sort(key=lambda x: (-x[0], x[1]))
         cap = limit if limit and limit > 0 else len(scored)
-        return [
-            SearchResult(
-                concept_id=cid,
-                title=title_map.get(cid, ""),
-                score=rrf,
-                snippets=snippet_map.get(cid, []),
-                source_backend="hybrid",
+        results: list[SearchResult] = []
+        for rrf, cid in scored[:cap]:
+            matched_backends: list[str] = []
+            component_scores: dict[str, float] = {}
+            component_ranks: dict[str, int] = {}
+            if cid in lex_by_id:
+                matched_backends.append("lexical")
+                component_scores["lexical"] = lex_by_id[cid].score
+                component_ranks["lexical"] = lex_rank[cid]
+            if cid in sem_by_id:
+                matched_backends.append("semantic-lite")
+                component_scores["semantic-lite"] = sem_by_id[cid].score
+                component_ranks["semantic-lite"] = sem_rank[cid]
+            results.append(
+                SearchResult(
+                    concept_id=cid,
+                    title=title_map.get(cid, ""),
+                    score=rrf,
+                    snippets=snippet_map.get(cid, []),
+                    source_backend="hybrid",
+                    detail={
+                        "matched_backends": matched_backends,
+                        "component_scores": component_scores,
+                        "component_ranks": component_ranks,
+                        "fusion": "rrf",
+                    },
+                )
             )
-            for rrf, cid in scored[:cap]
-        ]
+        return results
 
 
 # ---------------------------------------------------------------------------
@@ -777,6 +831,8 @@ def search_bundle(
     relation: str | None = None,
     source: str | None = None,
     target: str | None = None,
+    semantic_min_score: float | None = None,
+    hybrid_require: str = "any",
 ) -> list[SearchResult]:
     """Search ``bundle`` and return ranked :class:`SearchResult` objects.
 
@@ -794,6 +850,10 @@ def search_bundle(
         relation: relation type filter (relation mode only).
         source: source concept-id filter (relation mode only).
         target: target concept-id filter (relation mode only).
+        semantic_min_score: opt-in SemanticLite cosine threshold in ``[0,1]``.
+            In hybrid mode this gates the semantic component before RRF.
+        hybrid_require: hybrid evidence policy: ``any`` (legacy union),
+            ``lexical``, ``semantic``, or ``both``.
 
     Returns:
         Ranked list of :class:`SearchResult` (highest score first).
@@ -802,11 +862,21 @@ def search_bundle(
     :class:`HybridBackend`) are zero-dependency, so there are no provider
     switches. ``mode`` selects which runs: ``lexical`` → LexicalBackend,
     ``semantic`` → SemanticLiteBackend, ``hybrid`` → HybridBackend (RRF fusion
-    of the two). The agent (an LLM in opencode / Claude Code / Codex) is
-    itself the best true-semantic engine, so a local embedding backend would
-    be redundant; SemanticLite is the cheap fuzzy-semantic layer that helps
-    the agent find candidates.
+    of the two). SemanticLite is a cheap fuzzy candidate layer, not dense
+    semantic retrieval; a downstream agent can rerank returned candidates but
+    cannot recover a relevant concept that retrieval omitted.
     """
+    if semantic_min_score is not None and not 0.0 <= semantic_min_score <= 1.0:
+        raise ValueError("semantic_min_score must be between 0.0 and 1.0")
+    if hybrid_require not in {"any", "lexical", "semantic", "both"}:
+        raise ValueError("hybrid_require must be one of: any, lexical, semantic, both")
+    if semantic_min_score is not None and mode not in {
+        SearchMode.SEMANTIC, SearchMode.HYBRID
+    }:
+        raise ValueError("semantic_min_score is only valid in semantic or hybrid mode")
+    if hybrid_require != "any" and mode != SearchMode.HYBRID:
+        raise ValueError("hybrid_require is only valid in hybrid mode")
+
     content_index = bundle.content_index()
 
     if mode == SearchMode.TAG:
@@ -855,6 +925,8 @@ def search_bundle(
             backend.index(content_index)
         corpus_size = max(len(content_index.by_id), 1)
         raw = backend.search(query, limit=corpus_size)
+        if semantic_min_score is not None:
+            raw = [r for r in raw if r.score >= semantic_min_score]
         return _apply_filters(raw, content_index, type_filter, tag, limit)
 
     if mode == SearchMode.HYBRID:
@@ -865,7 +937,12 @@ def search_bundle(
         sem = _get_semantic_lite_backend(bundle)
         if not sem._indexed:
             sem.index(content_index)
-        hybrid = HybridBackend(lex, sem)
+        hybrid = HybridBackend(
+            lex,
+            sem,
+            semantic_min_score=semantic_min_score,
+            require_backend=hybrid_require,
+        )
         corpus_size = max(len(content_index.by_id), 1)
         raw = hybrid.search(query, limit=corpus_size)
         # Current spec §6: a successful hybrid query activates
@@ -1144,7 +1221,9 @@ def _search_relation(
 
     # Collect matching edges grouped by source concept.
     by_source: dict[ConceptId, list[dict]] = {}
-    for edge in graph.edges:
+    # Logical consumers should not inflate scores/details for repeated authored
+    # occurrences.  ``graph.edges`` remains the occurrence-level view.
+    for edge in graph.logical_edges():
         src = edge.source
         tgt = edge.target
         if source_cid is not None and src != source_cid:
@@ -1153,7 +1232,7 @@ def _search_relation(
             continue
         # Determine edge type and via (typed-relation vs markdown)
         edge_label = edge.label or ""
-        via = "relations" if (edge.target_raw and edge.target_raw.startswith("relation:")) else "markdown"
+        via = "relations" if edge.origin == "relation" else "markdown"
         edge_type = edge_label if via == "relations" else ""
 
         # P2-1 (spec §4.3 "unioned" ambiguity, resolved toward "filter the

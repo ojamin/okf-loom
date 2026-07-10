@@ -86,6 +86,26 @@ class Link:
         """True if this link points at a markdown concept inside the bundle."""
         return self.form in ("absolute", "relative", "wikilink")
 
+    @property
+    def origin(self) -> str:
+        """Return ``"relation"`` for governed typed relations, else ``"markdown"``.
+
+        Typed-relation edges remain :class:`Link` objects for backwards
+        compatibility.  Centralising the discriminator avoids making every
+        consumer repeat the ``target_raw`` magic-prefix check.
+        """
+        return "relation" if self.target_raw.startswith("relation:") else "markdown"
+
+    @property
+    def logical_type(self) -> str:
+        """Relation type used by :meth:`Graph.logical_edges`.
+
+        Markdown labels are display prose, not relation types, so markdown
+        occurrences use the empty logical type.  Typed relations use their
+        authored relation label.
+        """
+        return self.label if self.origin == "relation" else ""
+
 
 # ---------------------------------------------------------------------------
 # Concept
@@ -818,6 +838,28 @@ class Graph:
     def outlinks(self, cid: ConceptId) -> list[Link]:
         """Links FROM the given concept."""
         return list(self.out_edges.get(cid, []))
+
+    def logical_edges(self) -> list[Link]:
+        """Return a stable de-duplicated view while preserving raw occurrences.
+
+        :attr:`edges` intentionally retains every authored occurrence for
+        diagnostics and round-trip-sensitive consumers.  This view collapses
+        repeats by ``(source, logical_type, target)`` while retaining distinct
+        typed relation types between the same two concepts.  The first authored
+        occurrence wins, preserving deterministic order.
+        """
+        seen: set[tuple[ConceptId, str, object]] = set()
+        out: list[Link] = []
+        for link in self.edges:
+            target_identity: object = (
+                link.target if link.target is not None else link.target_raw
+            )
+            key = (link.source, link.logical_type, target_identity)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(link)
+        return out
 
     def neighbours(self, cid: ConceptId, *, max_depth: int = 1) -> set[ConceptId]:
         """BFS over in+out edges up to max_depth hops."""

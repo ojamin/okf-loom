@@ -1025,10 +1025,14 @@ def _h_add_relation(_bundle: Bundle, c: Concept, args: dict) -> _HandlerResult:
     if not target_str:
         raise KeyError("target_concept_id")
     # Validate the shape (raises ConceptIdError -> caught upstream).
-    concept_id_from_str(str(target_str))
+    target_text = str(target_str).strip()
+    target_cid = concept_id_from_str(target_text)
+    relation_type = str(args.get("relation_type", "related_to")).strip()
+    if not relation_type:
+        raise ValueError("relation_type must be a non-empty string")
     entry = {
-        "target": str(target_str),
-        "type": str(args.get("relation_type", "related_to")),
+        "target": target_text,
+        "type": relation_type,
         "detail": str(args.get("detail", "")),
     }
     cur = c.frontmatter.get("relations")
@@ -1036,19 +1040,29 @@ def _h_add_relation(_bundle: Bundle, c: Concept, args: dict) -> _HandlerResult:
         c.frontmatter["relations"] = [entry]
         return True, None, True
     if isinstance(cur, list):
-        exists = any(
-            isinstance(r, dict)
-            and r.get("target") == entry["target"]
-            and r.get("type") == entry["type"]
-            for r in cur
-        )
+        exists = False
+        for relation in cur:
+            if not isinstance(relation, dict):
+                continue
+            if str(relation.get("type", "")).strip() != relation_type:
+                continue
+            try:
+                existing_target = concept_id_from_str(
+                    str(relation.get("target", "")).strip()
+                )
+            except (ConceptIdError, ValueError):
+                continue
+            if existing_target == target_cid:
+                exists = True
+                break
         if exists:
             return False, "already_related", False
         cur.append(entry)
         return True, None, True
-    # Unexpected shape: overwrite with a clean list.
-    c.frontmatter["relations"] = [entry]
-    return True, None, True
+    # Fail closed: a governed value with the wrong shape is hand-authored
+    # content too. Replacing it would silently destroy the evidence that
+    # validation surfaces; require the author to repair the shape first.
+    return False, "malformed_relations", False
 
 
 # ---- append_body_section ---------------------------------------------------
