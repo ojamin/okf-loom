@@ -4,6 +4,11 @@ Investigation date: 2026-07-01, against the live server
 run on `samples/showcase` ("Northwind Coffee"). Bug-level findings from the
 same review touch these surfaces and should ride along with this work.
 
+> **Follow-up (2026-07-27):** Phases 1–5 largely landed at the component
+> level. For a current assessment of what still holds the product back
+> (composition / chrome / first viewport) and aspirational mockups, see
+> [`ux-vision-2026-07.md`](ux-vision-2026-07.md).
+
 ## 1. What the investigation found
 
 ### Current state — wiki
