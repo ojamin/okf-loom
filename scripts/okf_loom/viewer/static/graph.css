@@ -122,7 +122,9 @@
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  height: calc(100vh - 52px);
+  height: auto;
+  /* Fill remaining viewport under topbar (+ optional studio strip). */
+  flex-grow: 1;
   background: var(--okf-atlas-bg, var(--okf-bg));
 }
 .okf-layout--atlas > .okf-graph {
@@ -1053,6 +1055,20 @@
 .okf-graph-tour[data-at="left"] { left: 20px; }
 .okf-graph-tour[data-at="center"] { left: 50%; transform: translateX(-50%); }
 .okf-graph-tour[data-at="right"] { right: 20px; }
+/* Keep the first-visit tour clear of the atlas minimap + orphan shelf. */
+.okf-layout--atlas .okf-graph-tour {
+  bottom: auto;
+  top: 56px;
+  background: rgba(14, 20, 36, 0.94);
+  border-color: rgba(62, 201, 201, 0.45);
+  color: var(--okf-atlas-fg);
+  backdrop-filter: blur(10px);
+}
+.okf-layout--atlas .okf-graph-tour[data-at="right"] {
+  right: auto;
+  left: 16px;
+}
+.okf-layout--atlas .okf-graph-tour p { color: var(--okf-atlas-muted); }
 .okf-graph-tour strong { display: block; margin-bottom: 4px; font-size: var(--okf-text-base); }
 .okf-graph-tour p { margin: 0 0 10px; color: var(--okf-fg-muted); }
 .okf-graph-tour__nav { display: flex; align-items: center; justify-content: space-between; }

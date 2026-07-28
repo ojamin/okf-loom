@@ -410,7 +410,15 @@
   function mountBar() {
     const topbar = $(".okf-topbar");
     const controls = topbar && $(".okf-topbar__controls", topbar);
-    if (controls) {
+    const isGraph = document.body && document.body.classList.contains("okf-viewer--graph");
+    if (isGraph && topbar && topbar.parentNode) {
+      // Atlas graph keeps the mockup chrome (brand | search | Index).
+      // Studio controls sit in a slim strip under that row so they do not
+      // collapse the centered search grid.
+      bar.classList.remove("okf-studio-bar--inline");
+      bar.classList.add("okf-studio-bar--graph");
+      topbar.parentNode.insertBefore(bar, topbar.nextSibling);
+    } else if (controls) {
       // Prefer mounting inside the sticky topbar so chrome is one row.
       // Place studio cluster after Graph/Index/theme (end of controls).
       controls.appendChild(bar);
@@ -425,12 +433,14 @@
     if (isConceptPage()) {
       leftGroup.appendChild(viewSwitch);
     }
-    // Hero-ise the search field when present.
+    // Hero-ise the search field when present — but leave the graph's
+    // "Search in graph…" copy alone (mockup-03).
     const searchInput = topbar && topbar.querySelector('input[type="search"]');
-    if (searchInput && !searchInput.getAttribute("placeholder")) {
-      searchInput.setAttribute("placeholder", "Search the atlas\u2026");
-    } else if (searchInput && /Search/i.test(searchInput.getAttribute("placeholder") || "")) {
-      searchInput.setAttribute("placeholder", "Search the atlas\u2026");
+    if (searchInput && !isGraph) {
+      if (!searchInput.getAttribute("placeholder") ||
+          /Search/i.test(searchInput.getAttribute("placeholder") || "")) {
+        searchInput.setAttribute("placeholder", "Search the atlas\u2026");
+      }
     }
   }
 

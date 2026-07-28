@@ -49,6 +49,23 @@
 .okf-studio-bar--inline .okf-studio-bar__group {
   gap: var(--okf-space-1);
 }
+/* Graph atlas: studio lives under the brand/search row (mockup-03 chrome). */
+.okf-studio-bar--graph {
+  min-height: 34px;
+  padding: 0 16px;
+  background: rgba(10, 14, 26, 0.92);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  color: #94a3b8;
+}
+.okf-studio-bar--graph .okf-studio-btn,
+.okf-studio-bar--graph button,
+.okf-studio-bar--graph a {
+  color: #94a3b8;
+}
+.okf-studio-bar--graph .okf-studio-btn:hover,
+.okf-studio-bar--graph button:hover {
+  color: #e8eefc;
+}
 .okf-studio-bar__group {
   display: flex;
   align-items: center;
