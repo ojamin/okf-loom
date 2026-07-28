@@ -1,25 +1,8 @@
 <!DOCTYPE html>
 <!--
-  OKF full-page graph view template.
+  OKF full-page graph view template — atlas composition shell.
 
-  Placeholders (str.replace):
-      __LANG__             → document language
-      __THEME_ATTR__       → ` data-theme="light|dark|pastel|sepia|midnight"` (or empty)
-      __DATA_ATTRS__       → ` data-okf-mode="..." data-okf-enhance="..."` (P1-3)
-                             graph.js reads data-okf-mode to decide whether
-                             Open-page hrefs need a .html suffix.
-      __HEAD_TITLE__       → <title> text
-      __BUNDLE_NAME__      → display name
-      __STATIC_PREFIX__    → URL prefix for /__static/ assets
-      __WIKI_CSS_LINK__    → <link rel="stylesheet" href="...wiki.css">
-      __GRAPH_CSS_LINK__   → <link rel="stylesheet" href="...graph.css">
-      __GRAPH_JS_SRC__     → <script src="...graph.js" defer></script>
-      __CDN_SCRIPTS__      → Cytoscape.js CDN tag (or empty if config.cdn=false)
-      __INITIAL_THEME__    → "light" | "dark" | "pastel" | "sepia" | "midnight"
-      __INITIAL_LAYOUT__   → "cose" | "concentric" | ...
-      __GRAPH_DATA_URL__   → URL to fetch graph.json from (or empty to inline)
-      __GRAPH_DATA_INLINE__ → inert template-held JSON for file:// static builds
-      __BACK_LINK__        → URL back to the index
+  Layout: left lens/filter rail | canvas | right intelligence pane.
 -->
 <html lang="__LANG__"__THEME_ATTR__>
 <head>
@@ -33,46 +16,51 @@ __CDN_SCRIPTS__
 </head>
 <body class="okf-viewer okf-viewer--graph" __DATA_ATTRS__>
 <a href="#okf-main" class="okf-skip-link">Skip to content</a>
-<header class="okf-topbar">
+<header class="okf-topbar okf-topbar--graph">
   <div class="okf-topbar__brand">
     <a href="__BACK_LINK__" class="okf-brand-link"><strong>__BUNDLE_NAME__</strong></a>
-    <span class="okf-muted">graph view</span>
   </div>
   <div class="okf-topbar__controls">
-    <input id="okf-search" type="search" placeholder="Search title / id / tag" autocomplete="off" aria-label="Search">
-    <select id="okf-filter-type" aria-label="Filter by type">
+    <form class="okf-search-form okf-search-form--graph" role="search" onsubmit="return false;">
+      <input id="okf-search" type="search" placeholder="Search in graph…" autocomplete="off" aria-label="Search in graph">
+      <kbd class="okf-search-kbd" aria-hidden="true">⌘K</kbd>
+    </form>
+    <select id="okf-filter-type" aria-label="Filter by type" hidden>
       <option value="">All types</option>
     </select>
-    <button id="okf-reset" type="button">Reset view</button>
-    <a class="okf-btn" href="__BACK_LINK__">Index</a>
-    __INITIAL_THEME_BUTTON__
+    <div class="okf-topbar__actions">
+      <button id="okf-reset" type="button" class="okf-btn okf-btn--quiet" title="Reset view">Reset</button>
+      <a class="okf-btn" href="__BACK_LINK__">Index</a>
+      __INITIAL_THEME_BUTTON__
+    </div>
   </div>
 </header>
 
-<!-- iter1 CRI-019: SSR / no-JS fallback banner (see concept_page.html). -->
 <noscript><p class="okf-studio-fallback-banner" role="alert">JavaScript is off. The graph needs it; use the concept index to browse.</p></noscript>
 <p class="okf-studio-fallback-banner" role="status">Live studio unavailable. Showing a read-only view.</p>
 
-<main id="okf-main" class="okf-layout">
-  <!-- P2-2 (iter-1): top-level heading so the graph view has a real h1
-       in the document outline (WCAG / SEO). Visually hidden; the detail
-       panel's selected-node title is an <h2> below. -->
+<main id="okf-main" class="okf-layout okf-layout--atlas">
   <h1 class="sr-only">__BUNDLE_NAME__ graph view</h1>
+
+  <aside id="okf-graph-rail" class="okf-graph-rail" aria-label="Lenses and filters">
+    <div class="okf-graph-rail__section">
+      <h2 class="okf-graph-rail__title">Lenses</h2>
+      <div id="okf-graph-rail-lenses" class="okf-graph-rail__lenses"></div>
+    </div>
+    <div class="okf-graph-rail__section">
+      <h2 class="okf-graph-rail__title">Filter by type</h2>
+      <div id="okf-graph-rail-filters" class="okf-graph-rail__filters"></div>
+    </div>
+    <div class="okf-graph-rail__section okf-graph-rail__section--adv">
+      <div id="okf-graph-rail-advanced"></div>
+    </div>
+  </aside>
 
   <section id="okf-graph" class="okf-graph" aria-label="Concept graph"
            data-graph-url="__GRAPH_DATA_URL__"
            data-concept-prefix="__STATIC_PREFIX__/../"
            data-initial-layout="__INITIAL_LAYOUT__"
            data-initial-theme="__INITIAL_THEME__">
-    <!-- P1-4 / P2-2 (iter-1): keyboard-accessible node index. Each entry is
-         a real <button> populated by graph.js (sorted by label); click OR
-         Enter/Space calls showDetail(id), the same handler Cytoscape's tap
-         uses. Reuses the concept-page local-graph pill pattern. Collapsible
-         via <details>.
-         P2-4 (iter-2): defaults to COLLAPSED on all screen sizes (the `open`
-         attribute was removed). On mobile this prevents the overlay from
-         crowding the 50vh canvas; the <summary> is still keyboard-reachable
-         so users expand it with one click or Enter/Space. -->
     <details class="okf-node-index">
       <summary>All concepts <span class="okf-node-index__count" id="okf-node-index-count"></span></summary>
       <p class="okf-node-index__hint okf-muted">Click or press Enter to focus a concept.</p>
@@ -80,10 +68,8 @@ __CDN_SCRIPTS__
     </details>
   </section>
 
-  <!-- No aria-live here: graph.js mounts its own role="status" region
-       (.okf-signal__status) inside this pane, and a live region nested inside
-       another double-announces. The inner status region is the single owner. -->
-  <aside id="okf-detail" class="okf-detail">
+  <aside id="okf-detail" class="okf-detail okf-detail--atlas">
+    <div id="okf-detail-lenshead" class="okf-detail__lenshead"></div>
     <div id="detail-empty" class="okf-muted okf-detail__empty">Select a node to see its details.</div>
     <article id="detail-content" hidden>
       <header class="okf-detail__header">
@@ -96,10 +82,6 @@ __CDN_SCRIPTS__
         <dt>Resource</dt><dd id="detail-resource"></dd>
         <dt>Tags</dt><dd id="detail-tags"></dd>
       </dl>
-      <!-- P1-3 (iter-1): §7 governed keys rendered client-side by graph.js
-           showDetail(), mirroring the concept page's _render_governed_keys
-           treatment (aliases pills, entities <dl>, provenance list,
-           citations <ol>, relations chips). Hidden when all sections empty. -->
       <div class="okf-detail__governed" id="detail-governed" hidden></div>
       <hr>
       <div id="detail-body" class="okf-prose"></div>
@@ -108,14 +90,8 @@ __CDN_SCRIPTS__
   </aside>
 </main>
 
-<!-- Static builds inline inert JSON here because browsers block fetch() from
-     file:// pages. Serve/SPA leave this placeholder empty and fetch normally. -->
 __GRAPH_DATA_INLINE__
 
-<!-- graph.js reads config from data-* attributes on #okf-graph (CSP-safe:
-     no inline scripting). The previous comment-only inline script element
-     here triggered a CSP violation even though it had no executable code,
-     so it was removed (iter-1). -->
 __GRAPH_JS_SRC__
 </body>
 </html>

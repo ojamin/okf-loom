@@ -81,7 +81,20 @@
   };
 
   // Resolve the palette for the CURRENT data-theme (light fallback).
+  // On the full-page atlas graph shell, always use the deep-space atlas
+  // canvas palette so the mockup look holds regardless of chrome theme.
   function graphPalette() {
+    if (document.body && document.body.classList.contains("okf-viewer--graph")) {
+      return {
+        nodeText: "#e8eefc",
+        nodeBorder: "rgba(255,255,255,0.22)",
+        bridgeBorder: "#e8eefc",
+        edge: "#3a4663",
+        edgeLabel: "#b8c4e0",
+        edgeLabelBg: "rgba(7,11,20,0.88)",
+        select: "#3ec9c9",
+      };
+    }
     var t = document.documentElement.getAttribute("data-theme") || "light";
     return GRAPH_COLORS[t] || GRAPH_COLORS.light;
   }
@@ -1022,13 +1035,29 @@
             "text-background-shape": "roundrectangle",
             "width": "data(vizSize)",
             "height": "data(vizSize)",
-            "border-width": 1,
+            "border-width": 2,
             "border-color": GRAPH_COLORS.light.nodeBorder,
+            "border-opacity": 0.55,
           },
         },
         {
           selector: "node:selected",
-          style: { "border-width": 3, "border-color": GRAPH_COLORS.light.select },
+          style: {
+            "border-width": 3.5,
+            "border-color": GRAPH_COLORS.light.select,
+            "underlay-color": GRAPH_COLORS.light.select,
+            "underlay-opacity": 0.42,
+            "underlay-padding": 14,
+            "z-index": 10,
+          },
+        },
+        {
+          selector: "node.okf-hub",
+          style: {
+            "underlay-color": GRAPH_COLORS.light.select,
+            "underlay-opacity": 0.22,
+            "underlay-padding": 10,
+          },
         },
         {
           selector: "edge",
@@ -1037,15 +1066,13 @@
             // Signal "Primary signal" + boost controls compute. mapData keeps
             // the mapping in the stylesheet so .dim / :selected class selectors
             // still override (an inline ele.style() bypass would not).
-            "width": "mapData(weight, 0, 1, 1.2, 4.8)",
-            "opacity": "mapData(weight, 0, 1, 0.5, 1)",
+            "width": "mapData(weight, 0, 1, 1.4, 5.2)",
+            "opacity": "mapData(weight, 0, 1, 0.35, 0.95)",
             "line-color": GRAPH_COLORS.light.edge,
             "target-arrow-color": GRAPH_COLORS.light.edge,
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
-            // Phase 3: arrowheads scale with edge weight so direction stays
-            // readable on heavier edges (0.85 flat was squint-territory).
-            "arrow-scale": "mapData(weight, 0, 1, 0.9, 1.6)",
+            "arrow-scale": "mapData(weight, 0, 1, 1.0, 1.7)",
             // Review feedback: edge labels are SUPPRESSED by default (clutter).
             // The .okf-show-label class turns them on contextually (Relations /
             // Focus presets, and edges touching the selected node).
@@ -1105,21 +1132,24 @@
         // Phase 4 path tracing (shift-click): the chain lights up in the
         // selection accent; everything off-path fades further than hover.
         { selector: ".okf-path-dim", style: { "opacity": 0.12 } },
+        { selector: "edge.okf-path", style: {
+            "width": 4.5,
+            "line-color": GRAPH_COLORS.light.select,
+            "target-arrow-color": GRAPH_COLORS.light.select,
+            "opacity": 1,
+            "arrow-scale": 1.6,
+            "line-style": "dashed",
+            "line-dash-pattern": [8, 4],
+            "z-index": 9,
+          } },
         { selector: "node.okf-path", style: {
             "border-width": 3,
             "border-color": GRAPH_COLORS.light.select,
             "underlay-color": GRAPH_COLORS.light.select,
-            "underlay-opacity": 0.14,
-            "underlay-padding": 6,
-        } },
-        { selector: "edge.okf-path", style: {
-            "line-color": GRAPH_COLORS.light.select,
-            "target-arrow-color": GRAPH_COLORS.light.select,
-            "width": 4.5,
-            "opacity": 1,
-            "line-style": "solid",
-            "z-compound-depth": "top",
-        } },
+            "underlay-opacity": 0.22,
+            "underlay-padding": 8,
+            "z-index": 9,
+          } },
         {
           selector: "edge:selected",
           style: {
@@ -1202,6 +1232,12 @@
       cy.style().selector("edge").style("text-background-color", pal.edgeLabelBg).update();
       cy.style().selector("edge").style("color", pal.edgeLabel).update();
       cy.style().selector("node:selected").style("border-color", pal.select).update();
+      cy.style().selector("node:selected").style("underlay-color", pal.select).update();
+      cy.style().selector("node.okf-hub").style("underlay-color", pal.select).update();
+      cy.style().selector("node.okf-path").style("border-color", pal.select).update();
+      cy.style().selector("node.okf-path").style("underlay-color", pal.select).update();
+      cy.style().selector("edge.okf-path").style("line-color", pal.select).update();
+      cy.style().selector("edge.okf-path").style("target-arrow-color", pal.select).update();
       cy.style().selector("edge:selected").style("line-color", pal.select).update();
       cy.style().selector("edge:selected").style("target-arrow-color", pal.select).update();
       syncBridgeColour();
@@ -1477,6 +1513,11 @@
       var bt = (controlState.sizeMode === "betweenness" || controlState.colorMode === "bridge" ||
                 controlState.showBridges) ? computeBetweenness() : null;
       if (controlState.colorMode === "community" || controlState.groupBy === "community") computeCommunities();
+      // Hub threshold: top-decile degree among currently rendered nodes.
+      var degrees = [];
+      cy.nodes().forEach(function (n) { degrees.push(n.degree(false)); });
+      degrees.sort(function (a, b) { return a - b; });
+      var hubCut = degrees.length ? degrees[Math.max(0, Math.floor(degrees.length * 0.9))] : 999;
       cy.batch(function () {
         cy.nodes().forEach(function (n) {
           var id = n.id();
@@ -1497,6 +1538,9 @@
           n.toggleClass("okf-bridge", !!(controlState.showBridges && bt && (bt[id] || 0) >= BRIDGE_CUT));
           // Phase 3: degree-zero concepts carry the "not yet linked" cue.
           n.toggleClass("okf-orphan", n.degree(false) === 0);
+          // Soft halo on hubs (top-decile degree) for the atlas look.
+          var deg = n.degree(false);
+          n.toggleClass("okf-hub", deg >= hubCut);
         });
         cy.edges().forEach(function (e) {
           e.data("weight", edgeWeight(e.id()));
@@ -2331,17 +2375,17 @@
     }
 
     function buildSignalPanel() {
-      // User feedback: the controls are a compact bar PINNED at
-      // the top of the right-hand pane — a one-row "Lenses" radio group +
-      // an Advanced disclosure holding everything expert-grade (spacing,
-      // grouping, weighting, focus depth, plus the layout/type dropdowns
-      // relocated from the topbar). Clicking a node renders its page
-      // BELOW the bar; the bar stays sticky while that content scrolls.
-      var panel = el("div", { class: "okf-signal okf-signal--bar" });
+      // Atlas shell: lenses + advanced mount into the left rail; question +
+      // status live at the top of the right intelligence pane. Fallback to
+      // the legacy sticky bar in the detail pane when no rail exists
+      // (single-file viewer).
+      var railLenses = document.getElementById("okf-graph-rail-lenses");
+      var railAdv = document.getElementById("okf-graph-rail-advanced");
+      var lensHead = document.getElementById("okf-detail-lenshead");
+      var atlas = !!(railLenses && railAdv);
 
-      // Lenses (native radio group) — always visible. Each chip carries
-      // its question as the tooltip; the active question paints under the
-      // bar so switching a lens always tells you what you are looking at.
+      var panel = el("div", { class: "okf-signal okf-signal--bar" + (atlas ? " okf-signal--atlas" : "") });
+
       var lenses = el("div", { class: "okf-signal__lenses" });
       var seg = el("div", { class: "okf-signal__seg", role: "radiogroup", "aria-label": "Lens" });
       ui.presets = [];
@@ -2357,8 +2401,6 @@
         seg.appendChild(item);
       });
       lenses.appendChild(seg);
-      // Clear focus lives in the bar so the Focus lens has its exit next
-      // to it (disabled state managed by updateFocusControls).
       ui.clearFocus = el("button", { type: "button", class: "okf-signal__btn" }, ["Clear focus"]);
       ui.clearFocus.addEventListener("click", function () {
         controlState.focusEnabled = false; focusRoot = null;
@@ -2366,24 +2408,17 @@
         applyFilters(); updateFocusControls(); updateStatus(); overlayAwareFit();
       });
       lenses.appendChild(ui.clearFocus);
-      panel.appendChild(lenses);
 
-      // Advanced disclosure — the expert knobs, collapsed by default.
       var adv = el("details", { class: "okf-signal__advanced" });
       adv.appendChild(el("summary", { class: "okf-signal__summary" }, ["Advanced"]));
       var body = el("div", { class: "okf-signal__body" });
       adv.appendChild(body);
-      panel.appendChild(adv);
       body.appendChild(el("p", { class: "okf-signal__hint okf-muted" },
         ["Lenses own the layout and colours. These knobs fine-tune the active lens."]));
 
-      // View: the type filter (relocated from the topbar) + relationship
-      // label toggle. The layout dropdown is GONE — each lens owns its
-      // layout (evidence: professional tools ship 3 semantic layouts, not
-      // an algorithm buffet).
       var vfs = el("fieldset", { class: "okf-signal__group" });
       vfs.appendChild(el("legend", {}, ["View"]));
-      if (typeSel) vfs.appendChild(el("label", { class: "okf-signal__row" }, [el("span", { class: "okf-signal__row-label" }, ["Type filter"]), typeSel]));
+      if (typeSel && !atlas) vfs.appendChild(el("label", { class: "okf-signal__row" }, [el("span", { class: "okf-signal__row-label" }, ["Type filter"]), typeSel]));
       var groupOpts = [["community", "Theme"], ["type", "Type"], ["tag", "First tag"], ["relation", "Relation type"], ["neighborhood", "Connected component"]];
       if (HAS_FOLDERS) groupOpts.push(["folder", "Folder"]);
       if (HAS_GRAPH_CLUSTER) groupOpts.push(["graph_cluster", "Graph cluster"]);
@@ -2406,9 +2441,6 @@
         controlState.showAllEdges = c;
         markCustom(); applyFilters(); updateStatus();
       });
-      // Saket et al. 2014: group colouring aids cluster tasks but costs
-      // ~25% accuracy on plain topology tasks — so the evidence says make
-      // it a toggle. Off = colour by type (the auto palette).
       ui.themeColors = checkRow(vfs, "Colour by theme", controlState.colorMode === "community", function (c) {
         controlState.colorMode = c ? "community" : "type";
         if (c) controlState.colorBy = "type";
@@ -2445,29 +2477,73 @@
       body.appendChild(el("p", { class: "okf-signal__edgekey okf-muted" },
         ["Thicker links carry more connective weight. Hover any edge to read its relationship."]));
 
-      // Question + status (aria-live) sit in the BAR, under the lenses, so
-      // "what am I looking at" and "Showing N nodes…" stay visible without
-      // opening Advanced.
       ui.question = el("p", { class: "okf-signal__question" });
-      panel.appendChild(ui.question);
       statusEl = el("p", { class: "okf-signal__status", role: "status", "aria-live": "polite" });
-      panel.appendChild(statusEl);
 
       panelEl = panel;
-      // Pin at the top of the right-hand detail pane; the node's
-      // rendered page flows underneath. Fallback to the old in-canvas
-      // mount for any template without a detail pane.
-      var detailEl = document.getElementById("okf-detail");
-      if (detailEl) {
-        detailEl.insertBefore(panel, detailEl.firstChild);
+      if (atlas) {
+        // Left rail: vertical lenses + advanced. Right pane: question/status.
+        railLenses.appendChild(lenses);
+        railAdv.appendChild(adv);
+        if (lensHead) {
+          lensHead.appendChild(ui.question);
+          lensHead.appendChild(statusEl);
+        }
+        buildTypeFilterRail();
+        panelEl = document.getElementById("okf-graph-rail") || panel;
       } else {
-        // In-canvas fallback: stop pointer events bubbling into Cytoscape
-        // (background-tap would clear the selection on every slider drag).
-        ["mousedown", "touchstart", "pointerdown", "click", "dblclick", "wheel"].forEach(function (evName) {
-          panel.addEventListener(evName, function (e) { e.stopPropagation(); });
-        });
-        container.insertBefore(panel, container.firstChild);
+        panel.appendChild(lenses);
+        panel.appendChild(adv);
+        panel.appendChild(ui.question);
+        panel.appendChild(statusEl);
+        var detailEl = document.getElementById("okf-detail");
+        if (detailEl) {
+          detailEl.insertBefore(panel, detailEl.firstChild);
+        } else {
+          ["mousedown", "touchstart", "pointerdown", "click", "dblclick", "wheel"].forEach(function (evName) {
+            panel.addEventListener(evName, function (e) { e.stopPropagation(); });
+          });
+          container.insertBefore(panel, container.firstChild);
+        }
       }
+    }
+
+    function buildTypeFilterRail() {
+      var host = document.getElementById("okf-graph-rail-filters");
+      if (!host) return;
+      host.innerHTML = "";
+      var counts = {};
+      cy.nodes().forEach(function (n) {
+        var t = n.data("type") || "concept";
+        counts[t] = (counts[t] || 0) + 1;
+      });
+      Object.keys(counts).sort().forEach(function (t) {
+        var btn = el("button", {
+          type: "button",
+          class: "okf-graph-rail__type" + (controlState.hiddenTypes[t] ? " is-hidden" : ""),
+          "data-type": t,
+        });
+        var sw = el("span", { class: "okf-graph-rail__type-swatch" });
+        sw.style.background = palette[t] || "#94a3b8";
+        btn.appendChild(sw);
+        btn.appendChild(el("span", {}, [t]));
+        btn.appendChild(el("span", { class: "okf-graph-rail__type-count" }, [String(counts[t])]));
+        btn.addEventListener("click", function (e) {
+          if (e.altKey) {
+            // Solo this type.
+            Object.keys(counts).forEach(function (k) {
+              controlState.hiddenTypes[k] = k !== t;
+            });
+          } else {
+            controlState.hiddenTypes[t] = !controlState.hiddenTypes[t];
+          }
+          buildTypeFilterRail();
+          applyFilters();
+          updateLegend();
+          updateStatus();
+        });
+        host.appendChild(btn);
+      });
     }
 
     // Empty-graph hardening (reviewer #9): with zero nodes there is nothing to
@@ -2615,16 +2691,38 @@
       container.appendChild(pathChipEl);
       return pathChipEl;
     }
-    function setPathChip(text) {
+    function setPathChip(text, parts) {
       var chip = ensurePathChip();
       var lab = chip.querySelector(".okf-path-chip__label");
-      if (text) {
-        lab.textContent = text;
-        chip.hidden = false;
-      } else {
+      if (!text && !(parts && parts.length)) {
         lab.textContent = "";
+        lab.innerHTML = "";
         chip.hidden = true;
+        return;
       }
+      lab.innerHTML = "";
+      if (parts && parts.length) {
+        parts.forEach(function (p, i) {
+          var span = document.createElement("span");
+          if (p.kind === "edge") {
+            span.className = "okf-path-chip__edge";
+            span.textContent = p.text;
+          } else {
+            span.className = "okf-path-chip__node";
+            span.textContent = p.text;
+          }
+          lab.appendChild(span);
+          if (i < parts.length - 1 && p.kind === "node" && parts[i + 1] && parts[i + 1].kind === "node") {
+            var arrow = document.createElement("span");
+            arrow.className = "okf-path-chip__edge";
+            arrow.textContent = "→";
+            lab.appendChild(arrow);
+          }
+        });
+      } else {
+        lab.textContent = text;
+      }
+      chip.hidden = false;
     }
     function setStatusNote(msg) {
       if (!statusEl) return;
@@ -2653,15 +2751,15 @@
       res.path.forEach(function (ele) {
         if (ele.isNode()) {
           chain.push(ele.data("label") || ele.id());
-          chipParts.push(ele.data("label") || ele.id());
+          chipParts.push({ kind: "node", text: ele.data("label") || ele.id() });
         } else {
           var elab = ele.data("label");
           chain.push(elab ? "—" + elab + "→" : "→");
-          chipParts.push(elab ? "→ " + elab + " →" : "→");
+          chipParts.push({ kind: "edge", text: elab || "→" });
         }
       });
       setStatusNote("Path: " + chain.join(" "));
-      setPathChip(chipParts.join(" "));
+      setPathChip(chain.join(" "), chipParts);
     }
 
     // Orphan shelf — labelled tray of unlinked concepts at the canvas bottom.
@@ -2787,6 +2885,13 @@
         updateStatus();
       }, 120);
       searchInput.addEventListener("input", runSearch);
+      document.addEventListener("keydown", function (e) {
+        if ((e.metaKey || e.ctrlKey) && String(e.key || "").toLowerCase() === "k") {
+          e.preventDefault();
+          searchInput.focus();
+          searchInput.select();
+        }
+      });
     }
 
     if (typeSel) typeSel.addEventListener("change", function (e) {
@@ -2801,6 +2906,13 @@
     // lays out the same way on every load (the top Obsidian complaint was
     // position churn destroying spatial memory).
     buildSignalPanel();
+    ensureMinimap();
+    // Reposition floating card on pan/zoom so it stays anchored to the node.
+    cy.on("pan zoom", function () {
+      var sel = cy.nodes(":selected");
+      if (sel.length) showGraphCard(sel.id());
+      else hideGraphCard();
+    });
     if (GRAPH_EMPTY) {
       applyVisualEncoding();
       applyFilters();
@@ -2897,12 +3009,156 @@
       focusRoot = null;
       applyFilters();
       applyEdgeLabels();
+      hideGraphCard();
       updateFocusControls();
       updateStatus();
       var empty = document.getElementById("detail-empty");
       var content = document.getElementById("detail-content");
       if (empty) empty.hidden = false;
       if (content) content.hidden = true;
+      if (typeof renderLensSummary === "function") {
+        try { renderLensSummary(controlState.lens || "map"); } catch (e) {}
+      }
+    }
+
+    // Floating on-canvas selection card (mockup process card).
+    var graphCardEl = null;
+    function ensureGraphCard() {
+      if (graphCardEl) return graphCardEl;
+      graphCardEl = document.createElement("div");
+      graphCardEl.className = "okf-graph-card";
+      graphCardEl.hidden = true;
+      container.appendChild(graphCardEl);
+      return graphCardEl;
+    }
+    function hideGraphCard() {
+      if (graphCardEl) graphCardEl.hidden = true;
+    }
+    function showGraphCard(conceptId) {
+      var data = nodeIndex[conceptId];
+      var node = cy.getElementById(conceptId);
+      if (!data || !node || !node.length) { hideGraphCard(); return; }
+      var card = ensureGraphCard();
+      var out = 0, inn = 0;
+      try {
+        out = node.outgoers("node").length;
+        inn = node.incomers("node").length;
+      } catch (e) {}
+      var strong = Math.max(out, inn);
+      var weak = Math.min(out, inn);
+      var openSuffix = (MODE === "static") ? ".html" : "";
+      var href = conceptPagePrefix.replace(/\/$/, "") + "/" + conceptId + openSuffix;
+      card.innerHTML = "";
+      var typeEl = document.createElement("div");
+      typeEl.className = "okf-graph-card__type";
+      typeEl.textContent = data.type || "concept";
+      var titleEl = document.createElement("h3");
+      titleEl.className = "okf-graph-card__title";
+      titleEl.textContent = data.label || conceptId;
+      var descEl = document.createElement("p");
+      descEl.className = "okf-graph-card__desc";
+      descEl.textContent = (data.description || "").slice(0, 140) || "No description.";
+      var stats = document.createElement("div");
+      stats.className = "okf-graph-card__stats";
+      stats.innerHTML = "<span><strong>" + strong + "</strong> strong</span>" +
+        "<span><strong>" + weak + "</strong> weak</span>" +
+        "<span><strong>" + (out + inn) + "</strong> total</span>";
+      var open = document.createElement("a");
+      open.className = "okf-graph-card__open";
+      open.href = href;
+      open.textContent = "Open page →";
+      card.appendChild(typeEl);
+      card.appendChild(titleEl);
+      card.appendChild(descEl);
+      card.appendChild(stats);
+      card.appendChild(open);
+      var rp = node.renderedPosition();
+      var crect = container.getBoundingClientRect();
+      var left = rp.x + 18;
+      var top = rp.y - 20;
+      var cardW = 280, cardH = 160;
+      if (left + cardW > crect.width - 12) left = rp.x - cardW - 18;
+      if (top + cardH > crect.height - 12) top = crect.height - cardH - 12;
+      if (top < 12) top = 12;
+      if (left < 12) left = 12;
+      card.style.left = left + "px";
+      card.style.top = top + "px";
+      card.hidden = false;
+    }
+
+    // Simple minimap of node positions.
+    var minimapEl = null, minimapCtx = null;
+    function ensureMinimap() {
+      if (minimapEl) return;
+      if (!document.body.classList.contains("okf-viewer--graph")) return;
+      minimapEl = document.createElement("div");
+      minimapEl.className = "okf-graph-minimap";
+      minimapEl.setAttribute("aria-hidden", "true");
+      var tools = document.createElement("div");
+      tools.className = "okf-graph-minimap__tools";
+      [
+        ["in", "+", "Zoom in"],
+        ["out", "−", "Zoom out"],
+        ["fit", "⊡", "Fit"],
+        ["center", "◎", "Recenter"],
+      ].forEach(function (spec) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("data-mm", spec[0]);
+        btn.title = spec[2];
+        btn.textContent = spec[1];
+        btn.addEventListener("click", function () {
+          var a = btn.getAttribute("data-mm");
+          if (a === "in") cy.zoom({ level: cy.zoom() * 1.2, renderedPosition: { x: container.clientWidth / 2, y: container.clientHeight / 2 } });
+          else if (a === "out") cy.zoom({ level: cy.zoom() / 1.2, renderedPosition: { x: container.clientWidth / 2, y: container.clientHeight / 2 } });
+          else if (a === "fit") cy.fit(undefined, 48);
+          else if (a === "center") cy.center();
+          drawMinimap();
+        });
+        tools.appendChild(btn);
+      });
+      var view = document.createElement("div");
+      view.className = "okf-graph-minimap__view";
+      var canvas = document.createElement("canvas");
+      canvas.width = 132; canvas.height = 88;
+      view.appendChild(canvas);
+      minimapEl.appendChild(tools);
+      minimapEl.appendChild(view);
+      container.appendChild(minimapEl);
+      minimapCtx = canvas.getContext("2d");
+      cy.on("pan zoom position dragfree", drawMinimap);
+      drawMinimap();
+    }
+    function drawMinimap() {
+      if (!minimapCtx || !minimapEl) return;
+      var w = 132, h = 88;
+      minimapCtx.clearRect(0, 0, w, h);
+      minimapCtx.fillStyle = "rgba(7,11,20,0.9)";
+      minimapCtx.fillRect(0, 0, w, h);
+      var bb = cy.elements().boundingBox();
+      if (!bb || !isFinite(bb.w) || bb.w < 1 || bb.h < 1) return;
+      var pad = 8;
+      var sx = (w - pad * 2) / bb.w;
+      var sy = (h - pad * 2) / bb.h;
+      var s = Math.min(sx, sy);
+      cy.nodes().forEach(function (n) {
+        if (n.hasClass("dim")) return;
+        var p = n.position();
+        var x = pad + (p.x - bb.x1) * s;
+        var y = pad + (p.y - bb.y1) * s;
+        minimapCtx.beginPath();
+        minimapCtx.fillStyle = n.data("color") || "#64748b";
+        minimapCtx.arc(x, y, n.selected() ? 3.2 : 2, 0, Math.PI * 2);
+        minimapCtx.fill();
+      });
+      var ext = cy.extent();
+      var vx = pad + (ext.x1 - bb.x1) * s;
+      var vy = pad + (ext.y1 - bb.y1) * s;
+      var vw = (ext.x2 - ext.x1) * s;
+      var vh = (ext.y2 - ext.y1) * s;
+      minimapCtx.strokeStyle = "rgba(62,201,201,0.7)";
+      minimapCtx.lineWidth = 1;
+      minimapCtx.strokeRect(vx, vy, vw, vh);
     }
 
     function showDetail(conceptId) {
@@ -2933,6 +3189,8 @@
       var content = document.getElementById("detail-content");
       if (empty) empty.hidden = true;
       if (content) content.hidden = false;
+      showGraphCard(conceptId);
+      if (typeof drawMinimap === "function") drawMinimap();
 
       var chip = document.getElementById("detail-type");
       if (chip) {

@@ -1,104 +1,521 @@
-/* OKF viewer - graph view styles.
- *
- * Loaded in addition to wiki.css by the single-file viewer template (where
- * both are inlined) and the full-page graph view template. The shared
- * wiki.css already covers .okf-graph, .okf-detail, the type chips etc;
- * this file holds only the graph-specific overrides.
- */
+/* ---- Atlas graph shell (living-atlas composition) --------------------- *
+ * Three-pane place: left lens/filter rail | deep-space canvas | right
+ * intelligence pane. This is the visual target from mockup-03.
+ * Force deep-space tokens so a saved light/pastel chrome theme cannot
+ * wash out the graph place. */
+.okf-viewer--graph {
+  --okf-atlas-bg: #070b14;
+  --okf-atlas-panel: rgba(14, 20, 36, 0.88);
+  --okf-atlas-panel-solid: #0e1424;
+  --okf-atlas-border: rgba(148, 163, 184, 0.18);
+  --okf-atlas-fg: #e8eefc;
+  --okf-atlas-muted: #94a3b8;
+  --okf-atlas-glow: rgba(62, 201, 201, 0.45);
+  --okf-bg: #070b14;
+  --okf-bg-elev: #0e1424;
+  --okf-bg-inset: rgba(255, 255, 255, 0.04);
+  --okf-fg: #e8eefc;
+  --okf-fg-muted: #94a3b8;
+  --okf-border: rgba(148, 163, 184, 0.18);
+  --okf-border-strong: rgba(148, 163, 184, 0.32);
+  --okf-accent: #3ec9c9;
+  --okf-accent-hover: #7eeaea;
+  --okf-accent-on: #041014;
+  --okf-select: #3ec9c9;
+  --okf-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: var(--okf-atlas-bg);
+  color: var(--okf-atlas-fg);
+  height: 100%;
+  max-height: 100vh;
+  overflow: hidden;
+}
+.okf-viewer--graph .okf-topbar--graph {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(280px, 420px) minmax(140px, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  background: rgba(10, 14, 26, 0.96);
+  border-bottom: 1px solid var(--okf-atlas-border);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+.okf-viewer--graph .okf-topbar--graph .okf-brand-link,
+.okf-viewer--graph .okf-topbar--graph strong {
+  color: var(--okf-atlas-fg);
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+.okf-viewer--graph .okf-topbar--graph .okf-muted { color: var(--okf-atlas-muted); }
+.okf-viewer--graph .okf-topbar__controls {
+  display: contents;
+}
+.okf-viewer--graph .okf-search-form--graph {
+  grid-column: 2;
+  position: relative;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.okf-viewer--graph .okf-search-form--graph input {
+  width: 100%;
+  height: 36px;
+  border-radius: 999px;
+  padding: 0 52px 0 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--okf-atlas-border);
+  color: var(--okf-atlas-fg);
+  font-size: 0.9rem;
+}
+.okf-viewer--graph .okf-search-form--graph input::placeholder {
+  color: var(--okf-atlas-muted);
+}
+.okf-viewer--graph .okf-search-kbd {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 7px;
+  border: 1px solid var(--okf-atlas-border);
+  border-radius: 6px;
+  color: var(--okf-atlas-muted);
+  font-size: 0.68rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.25);
+}
+.okf-viewer--graph .okf-topbar__actions {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.okf-viewer--graph .okf-topbar--graph .okf-btn,
+.okf-viewer--graph .okf-topbar--graph button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--okf-atlas-muted);
+}
+.okf-viewer--graph .okf-topbar--graph .okf-btn:hover,
+.okf-viewer--graph .okf-topbar--graph button:hover {
+  color: var(--okf-atlas-fg);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--okf-atlas-border);
+}
+.okf-viewer--graph .okf-topbar--graph .okf-btn--quiet {
+  font-size: 0.8rem;
+}
+.okf-viewer--graph .okf-topbar--graph #okf-theme {
+  /* Mockup chrome keeps theme off the graph topbar; atlas palette is fixed. */
+  display: none;
+}
+.okf-viewer--graph .okf-studio-fallback-banner {
+  display: none;
+}
+
+.okf-layout--atlas {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr) minmax(300px, 360px);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: calc(100vh - 52px);
+  background: var(--okf-atlas-bg, var(--okf-bg));
+}
+.okf-layout--atlas > .okf-graph {
+  flex: unset;
+  height: 100%;
+  min-height: 0;
+  border-right: none;
+  background: transparent;
+}
+.okf-layout--atlas > .okf-detail {
+  flex: unset;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--okf-space-4);
+  background: var(--okf-atlas-panel, var(--okf-bg-elev));
+  border-left: 1px solid var(--okf-atlas-border, var(--okf-border));
+  backdrop-filter: blur(16px);
+  color: var(--okf-atlas-fg, var(--okf-fg));
+}
+
+/* Left lens / filter rail */
+.okf-graph-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--okf-space-4);
+  padding: var(--okf-space-4) var(--okf-space-3);
+  background: var(--okf-atlas-panel, var(--okf-bg-elev));
+  border-right: 1px solid var(--okf-atlas-border, var(--okf-border));
+  overflow-y: auto;
+  backdrop-filter: blur(14px);
+  color: var(--okf-atlas-fg, var(--okf-fg));
+}
+.okf-graph-rail__title {
+  margin: 0 0 var(--okf-space-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--okf-atlas-muted, var(--okf-fg-muted));
+}
+.okf-graph-rail__lenses {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.okf-graph-rail__lenses .okf-signal__seg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  grid-template-columns: none;
+}
+.okf-graph-rail__lenses .okf-signal__seg-item span {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--okf-atlas-muted, var(--okf-fg-muted));
+  font-size: var(--okf-text-sm);
+  font-weight: 600;
+}
+.okf-graph-rail__lenses .okf-signal__seg-item span:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--okf-atlas-fg, var(--okf-fg));
+  border-color: transparent;
+}
+.okf-graph-rail__lenses .okf-signal__seg-item input:checked + span {
+  background: rgba(62, 201, 201, 0.14);
+  color: #7eeaea;
+  border-color: rgba(62, 201, 201, 0.35);
+}
+.okf-graph-rail__filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.okf-graph-rail__type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--okf-atlas-fg, var(--okf-fg));
+  font: inherit;
+  font-size: var(--okf-text-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.okf-graph-rail__type:hover { background: rgba(255, 255, 255, 0.04); }
+.okf-graph-rail__type.is-hidden { opacity: 0.35; }
+.okf-graph-rail__type-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.okf-graph-rail__type-count {
+  margin-left: auto;
+  color: var(--okf-atlas-muted, var(--okf-fg-muted));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--okf-text-xs);
+}
+.okf-graph-rail .okf-signal__btn {
+  width: 100%;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--okf-atlas-border);
+  color: var(--okf-atlas-fg);
+}
+.okf-graph-rail .okf-signal__advanced > summary { color: var(--okf-atlas-muted); }
+.okf-graph-rail .okf-signal__body { max-height: none; color: var(--okf-atlas-fg); }
+.okf-graph-rail .okf-signal__group > legend { color: var(--okf-atlas-muted); }
+.okf-graph-rail .okf-signal__row-label { color: var(--okf-atlas-fg); }
+.okf-graph-rail select,
+.okf-graph-rail input[type="range"] {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--okf-atlas-border);
+  color: var(--okf-atlas-fg);
+  border-radius: 6px;
+}
 
 #okf-graph {
-  background: var(--okf-bg-elev);
-  /* Phase 4: the hover tooltip + zoom cluster are absolutely positioned
-   * children of the canvas container. */
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(62, 201, 201, 0.06), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(99, 102, 241, 0.05), transparent 55%),
+    var(--okf-atlas-bg, var(--okf-bg-elev));
   position: relative;
 }
 
-/* Path chip — shift-click path readout pinned to the canvas. */
+/* Path chip — mockup-style breadcrumb on canvas */
 .okf-path-chip {
   position: absolute;
-  top: 12px;
+  top: 14px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: min(640px, calc(100% - 24px));
-  padding: 6px 10px 6px 12px;
-  background: var(--okf-bg-elev);
-  border: 1px solid var(--okf-accent);
-  border-radius: var(--okf-radius-pill);
-  box-shadow: var(--okf-shadow);
+  gap: 10px;
+  max-width: min(720px, calc(100% - 24px));
+  padding: 8px 12px 8px 14px;
+  background: rgba(14, 20, 36, 0.9);
+  border: 1px solid rgba(62, 201, 201, 0.55);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(62, 201, 201, 0.12), 0 8px 28px rgba(0, 0, 0, 0.45);
   font-size: var(--okf-text-sm);
-  color: var(--okf-fg);
+  color: var(--okf-atlas-fg, var(--okf-fg));
+  backdrop-filter: blur(10px);
 }
 .okf-path-chip[hidden] { display: none !important; }
 .okf-path-chip__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  min-width: 0;
+}
+.okf-path-chip__node {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(62, 201, 201, 0.16);
+  border: 1px solid rgba(62, 201, 201, 0.35);
+  color: #7eeaea;
+  font-size: 0.82rem;
+}
+.okf-path-chip__edge {
+  color: var(--okf-atlas-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .okf-path-chip__clear {
   font: inherit;
   border: none;
   background: transparent;
-  color: var(--okf-fg-muted);
+  color: var(--okf-atlas-muted, var(--okf-fg-muted));
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
   font-size: 1.1rem;
 }
-.okf-path-chip__clear:hover { color: var(--okf-accent); }
+.okf-path-chip__clear:hover { color: #7eeaea; }
 
-/* Orphan shelf — not-yet-linked concepts as a bottom tray. */
+/* Orphan shelf — dashed tray */
 .okf-orphan-shelf {
   position: absolute;
-  left: 10px;
-  right: 72px;
-  bottom: 10px;
+  left: 14px;
+  right: 88px;
+  bottom: 14px;
   z-index: 5;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 88px;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--okf-bg-elev) 92%, transparent);
-  border: 1px dashed var(--okf-border-strong);
-  border-radius: var(--okf-radius);
-  box-shadow: var(--okf-shadow);
-  backdrop-filter: blur(4px);
+  gap: 6px;
+  max-height: 96px;
+  padding: 8px 12px;
+  background: rgba(14, 20, 36, 0.82);
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  color: var(--okf-atlas-fg);
 }
 .okf-orphan-shelf[hidden] { display: none !important; }
 .okf-orphan-shelf__title {
-  font-size: var(--okf-text-xs);
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--okf-fg-muted);
+  letter-spacing: 0.06em;
+  color: var(--okf-atlas-muted);
 }
 .okf-orphan-shelf__list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   overflow: auto;
 }
 .okf-orphan-shelf__item {
   font: inherit;
   font-size: var(--okf-text-xs);
-  padding: 2px 8px;
-  border: 1px solid var(--okf-border);
-  border-radius: var(--okf-radius-pill);
-  background: var(--okf-bg-inset);
-  color: var(--okf-fg-muted);
+  padding: 3px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--okf-atlas-muted);
   cursor: pointer;
 }
 .okf-orphan-shelf__item:hover {
-  border-color: var(--okf-accent);
-  color: var(--okf-accent);
+  border-color: rgba(62, 201, 201, 0.5);
+  color: #7eeaea;
 }
 
-/* Legend overlay showing type → colour */
+/* Floating selection card (on-canvas, mockup process card) */
+.okf-graph-card {
+  position: absolute;
+  z-index: 7;
+  width: min(280px, calc(100% - 24px));
+  padding: 12px 14px;
+  background: rgba(14, 20, 36, 0.92);
+  border: 1px solid rgba(62, 201, 201, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 0 24px rgba(62, 201, 201, 0.12), 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  color: var(--okf-atlas-fg);
+  pointer-events: auto;
+}
+.okf-graph-card[hidden] { display: none !important; }
+.okf-graph-card__type {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7eeaea;
+  margin-bottom: 4px;
+}
+.okf-graph-card__title {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.okf-graph-card__desc {
+  margin: 0 0 10px;
+  font-size: var(--okf-text-sm);
+  color: var(--okf-atlas-muted);
+  line-height: 1.4;
+}
+.okf-graph-card__stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: var(--okf-text-xs);
+  color: var(--okf-atlas-muted);
+}
+.okf-graph-card__stats strong { color: var(--okf-atlas-fg); font-variant-numeric: tabular-nums; }
+.okf-graph-card__open {
+  color: #7eeaea;
+  font-size: var(--okf-text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+.okf-graph-card__open:hover { text-decoration: underline; }
+
+/* Minimap + zoom tools */
+.okf-graph-minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 58px;
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: auto;
+}
+.okf-graph-minimap__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.okf-graph-minimap__tools button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--okf-atlas-border);
+  background: rgba(14, 20, 36, 0.9);
+  color: var(--okf-atlas-fg);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.okf-graph-minimap__tools button:hover {
+  border-color: rgba(62, 201, 201, 0.45);
+  color: #7eeaea;
+}
+.okf-graph-minimap__view {
+  width: 132px;
+  height: 88px;
+  border: 1px solid var(--okf-atlas-border, var(--okf-border));
+  border-radius: 8px;
+  background: rgba(7, 11, 20, 0.9);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.okf-graph-minimap canvas { width: 100%; height: 100%; display: block; }
+
+/* Detail pane atlas polish */
+.okf-detail--atlas {
+  color: var(--okf-atlas-fg, var(--okf-fg));
+}
+.okf-detail--atlas .okf-muted { color: var(--okf-atlas-muted); }
+.okf-detail--atlas .okf-detail__empty {
+  margin-top: var(--okf-space-3);
+  text-align: left;
+}
+.okf-detail__lenshead .okf-signal__question {
+  margin: 0 0 4px;
+  color: var(--okf-atlas-fg);
+  font-size: var(--okf-text-base);
+}
+.okf-detail__lenshead .okf-signal__status {
+  margin: 0 0 var(--okf-space-3);
+  color: var(--okf-atlas-muted);
+  font-size: var(--okf-text-sm);
+}
+.okf-detail--atlas .okf-lens-summary__verdict { color: var(--okf-atlas-fg); }
+.okf-detail--atlas .okf-lens-summary__row {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--okf-atlas-border);
+  color: var(--okf-atlas-fg);
+}
+.okf-detail--atlas .okf-lens-summary__bar { background: #3ec9c9; }
+.okf-detail--atlas .okf-detail__header h2 { color: var(--okf-atlas-fg); }
+.okf-detail--atlas a { color: #7eeaea; }
+
+/* Hide the old bottom-left legend on atlas shell — types live in the rail */
+.okf-layout--atlas .okf-graph-legend { display: none; }
+
+@media (max-width: 1100px) {
+  .okf-layout--atlas {
+    grid-template-columns: 168px minmax(0, 1fr) minmax(240px, 300px);
+  }
+}
+@media (max-width: 900px) {
+  .okf-layout--atlas {
+    display: flex;
+    flex-direction: column;
+  }
+  .okf-graph-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--okf-atlas-border);
+  }
+  .okf-graph-rail__section { flex: 1 1 140px; }
+  .okf-layout--atlas > .okf-graph { flex: 0 0 48vh; }
+  .okf-layout--atlas > .okf-detail { flex: 1; border-left: none; border-top: 1px solid var(--okf-atlas-border); }
+  .okf-graph-minimap { display: none; }
+}
+
+/* ---- OKF viewer - graph view styles (continued) --------------------- */
+
+/* Path chip / orphan shelf base rules continue below for non-atlas embeds */
 .okf-graph-legend {
   position: absolute;
   bottom: 10px;
