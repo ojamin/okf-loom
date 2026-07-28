@@ -411,13 +411,19 @@
     const topbar = $(".okf-topbar");
     const controls = topbar && $(".okf-topbar__controls", topbar);
     const isGraph = document.body && document.body.classList.contains("okf-viewer--graph");
-    if (isGraph && topbar && topbar.parentNode) {
-      // Atlas graph keeps the mockup chrome (brand | search | Index).
-      // Studio controls sit in a slim strip under that row so they do not
-      // collapse the centered search grid.
-      bar.classList.remove("okf-studio-bar--inline");
+    if (isGraph && topbar) {
+      // Mockup-03 chrome: Index + Agent presence only. Full studio strip is
+      // hidden; Comments/Changes stay reachable via the command palette.
+      const actions = topbar.querySelector(".okf-topbar__actions") || controls;
+      if (actions) {
+        presenceBtnText.textContent = "Agent Mira";
+        presenceBtn.classList.add("okf-presence-menu__btn--atlas");
+        actions.insertBefore(presenceMenu, actions.firstChild);
+      }
       bar.classList.add("okf-studio-bar--graph");
-      topbar.parentNode.insertBefore(bar, topbar.nextSibling);
+      bar.setAttribute("hidden", "hidden");
+      // Keep bar in DOM for any code that queries it, but off-screen.
+      document.body.appendChild(bar);
     } else if (controls) {
       // Prefer mounting inside the sticky topbar so chrome is one row.
       // Place studio cluster after Graph/Index/theme (end of controls).

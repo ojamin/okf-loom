@@ -1043,52 +1043,33 @@
         {
           selector: "node:selected",
           style: {
-            "border-width": 3.5,
+            "border-width": 4,
             "border-color": GRAPH_COLORS.light.select,
             "underlay-color": GRAPH_COLORS.light.select,
-            "underlay-opacity": 0.42,
-            "underlay-padding": 14,
+            "underlay-opacity": 0.55,
+            "underlay-padding": 18,
             "z-index": 10,
           },
         },
         {
           selector: "node.okf-hub",
           style: {
-            "underlay-color": GRAPH_COLORS.light.select,
-            "underlay-opacity": 0.22,
-            "underlay-padding": 10,
+            "underlay-color": "data(color)",
+            "underlay-opacity": 0.32,
+            "underlay-padding": 12,
           },
         },
         {
           selector: "edge",
           style: {
-            // Width + opacity track the per-edge `weight` (0..1) the
-            // Signal "Primary signal" + boost controls compute. mapData keeps
-            // the mapping in the stylesheet so .dim / :selected class selectors
-            // still override (an inline ele.style() bypass would not).
-            "width": "mapData(weight, 0, 1, 1.4, 5.2)",
-            "opacity": "mapData(weight, 0, 1, 0.35, 0.95)",
+            "width": "mapData(weight, 0, 1, 1.1, 3.4)",
+            "opacity": "mapData(weight, 0, 1, 0.22, 0.7)",
             "line-color": GRAPH_COLORS.light.edge,
             "target-arrow-color": GRAPH_COLORS.light.edge,
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
-            "arrow-scale": "mapData(weight, 0, 1, 1.0, 1.7)",
-            // Review feedback: edge labels are SUPPRESSED by default (clutter).
-            // The .okf-show-label class turns them on contextually (Relations /
-            // Focus presets, and edges touching the selected node).
+            "arrow-scale": "mapData(weight, 0, 1, 0.9, 1.4)",
             "label": "",
-            // Review feedback: the contextual relationship labels were
-            // faint/thin/unreadable at high spread. The faintness was the COLOR
-            // and WEIGHT, so fix exactly those — a 600 weight and the darkened
-            // slate token (GRAPH_COLORS.light.edgeLabel, #334155 ≈ 10:1) — and
-            // leave the plate opacity/padding at their reviewed defaults so the
-            // many overlapping selected-node labels do not stack into an opaque
-            // blob at the compact default. min-zoomed-font-size is raised 7→9 so
-            // that once the auto-fit zooms the graph out far enough that the
-            // labels would be sub-legible, they LOD-hide entirely (clean canvas)
-            // instead of rendering as faint noise; they return on zoom-in. This
-            // preserves Relations/Focus semantics (labels are still emitted via
-            // .okf-show-label) and only changes WHEN they paint.
             "font-size": 11,
             "font-weight": 600,
             "color": GRAPH_COLORS.light.edgeLabel,
@@ -1611,6 +1592,9 @@
       var q = controlState.search, ty = controlState.type;
       var thresh = MIN_THRESH[controlState.minLevel] || 0;
       var focusSet = (controlState.focusEnabled && focusRoot) ? neighborhoodIds(focusRoot, controlState.focusDepth) : null;
+      var calmMode = !controlState.showAllEdges && !controlState.relationEdges &&
+        (controlState.lens === "map" || controlState.lens === "themes" ||
+         controlState.lens === "bridges" || controlState.lens === "recent");
       cy.batch(function () {
         cy.nodes().forEach(function (n) {
           var d = n.data(), dim = false;
@@ -1623,6 +1607,10 @@
           if (!dim && focusSet) dim = !focusSet[n.id()];
           n.toggleClass("dim", dim);
         });
+      });
+      // After node dims settle, pick the sparse edge set for Map-like lenses.
+      var calmKeep = calmMode ? computeCalmEdgeKeep() : null;
+      cy.batch(function () {
         cy.edges().forEach(function (e) {
           var dim = e.source().hasClass("dim") || e.target().hasClass("dim");
           if (!dim && thresh > 0) {
@@ -1630,16 +1618,9 @@
             if (!keep && (e.data("weight") || 0) < thresh) dim = true;
           }
           e.toggleClass("dim", dim);
-          // Calm Map: hide weak untyped edges (progressive disclosure).
-          var calmHide = false;
-          if (!controlState.showAllEdges && !controlState.relationEdges &&
-              (controlState.lens === "map" || controlState.lens === "themes" ||
-               controlState.lens === "bridges" || controlState.lens === "recent")) {
-            var lab = e.data("label");
-            var w = e.data("weight") || 0;
-            if (!lab && w < 0.42) calmHide = true;
-          }
-          e.toggleClass("okf-edge-calm-hide", calmHide && !dim);
+          // Mockup Map: sparse constellation — only strongest edges stay visible.
+          var calmHide = !!(calmKeep && !dim && !calmKeep[e.id()]);
+          e.toggleClass("okf-edge-calm-hide", calmHide);
         });
         // Focus root halo: unmistakable marker on the focused node so Focus
         // never looks like Relations (reviewer blocker 4).
@@ -1650,6 +1631,29 @@
         }
       });
       updateOrphanShelf();
+    }
+
+    // Keep the top-K strongest undimmed edges per node (plus any high-weight
+    // labeled relations). Mimics the sparse mockup constellation.
+    function computeCalmEdgeKeep() {
+      var K = 2;
+      var keep = Object.create(null);
+      cy.nodes().forEach(function (n) {
+        if (n.hasClass("dim")) return;
+        var eds = n.connectedEdges().filter(function (e) {
+          return !e.source().hasClass("dim") && !e.target().hasClass("dim");
+        }).toArray().sort(function (a, b) {
+          return (b.data("weight") || 0) - (a.data("weight") || 0);
+        });
+        eds.slice(0, K).forEach(function (e) { keep[e.id()] = true; });
+        eds.forEach(function (e) {
+          var w = e.data("weight") || 0;
+          var lab = e.data("label");
+          if (lab && w >= 0.55) keep[e.id()] = true;
+          else if (w >= 0.78) keep[e.id()] = true;
+        });
+      });
+      return keep;
     }
 
     // Debounced, stale-safe layout rerun. The latest control values always
@@ -1700,6 +1704,14 @@
         if ((pr.r - pr.l) > cw * 0.6) ins.top = Math.max(ins.top, pr.b + 14);
         else ins.left = Math.max(ins.left, pr.r + 16);
       }
+      // Atlas frosted overlays float above the full-bleed canvas — reserve
+      // their footprints so fit/zoom keeps the constellation readable.
+      var rail = document.getElementById("okf-graph-rail");
+      var detail = document.getElementById("okf-detail");
+      var rr = rel(rail);
+      if (rr) ins.left = Math.max(ins.left, rr.r + 12);
+      var dr = rel(detail);
+      if (dr) ins.right = Math.max(ins.right, (cw - dr.l) + 12);
       // Node index is a small TOP-RIGHT box; push content below its row rather
       // than reserving the whole right column (which squeezed the graph).
       var nr = rel(container.querySelector(".okf-node-index"));
@@ -2253,13 +2265,13 @@
           ? "Showing the " + controlState.focusDepth + "-hop neighbourhood of the focused concept. Depth lives in Advanced."
           : "Select any node to isolate its neighbourhood. Everything else fades but stays in place.");
       } else {
-        // map / themes: the community digest.
+        // map / themes: mockup intelligence pane — verdict, themes, bridges.
         var com = computeCommunities();
         var pr = computePageRank();
-        heading(lensKey === "themes" ? "Themes" : "The lay of the land");
         var top = com.list.slice(0, 6).filter(function (c) { return c.ids.length > 1; });
         var linked = {};
         cy.edges().forEach(function (e) {
+          if (e.hasClass("okf-edge-calm-hide") || e.hasClass("dim")) return;
           var a = communityOf[e.source().id()], b = communityOf[e.target().id()];
           if (a != null && b != null && a !== b) linked[Math.min(a, b) + ":" + Math.max(a, b)] = true;
         });
@@ -2273,14 +2285,22 @@
           return c.ids.slice().sort(function (a, b) { return (pr[b] || 0) - (pr[a] || 0); })[0];
         }
         var themes = com.list.filter(function (c) { return c.ids.length > 1; }).length;
-        var bits = themes + " theme" + (themes === 1 ? "" : "s");
-        if (orphans.length) bits += " - " + orphans.length + " not yet linked";
+        var verdictBits = themes + " theme" + (themes === 1 ? "" : "s");
+        if (orphans.length) verdictBits += " \u00b7 " + orphans.length + " orphan" + (orphans.length === 1 ? "" : "s");
+        var gapLabel = null;
         if (gap) {
           var ga = nodeIndex[exemplar(gap[0])] || {}, gb = nodeIndex[exemplar(gap[1])] || {};
-          bits += " - the areas around \u201c" + (ga.label || "?") + "\u201d and \u201c" + (gb.label || "?") + "\u201d share no links";
+          gapLabel = (ga.label || "?") + " and " + (gb.label || "?") + " share no links";
+          verdictBits += " \u00b7 " + gapLabel;
         }
-        verdict(bits + ".");
-        com.list.slice(0, 8).forEach(function (c) {
+
+        var verdictBox = el("div", { class: "okf-lens-summary__verdict-card" });
+        verdictBox.appendChild(el("div", { class: "okf-lens-summary__verdict-kicker" }, ["Lens verdict"]));
+        verdictBox.appendChild(el("p", { class: "okf-lens-summary__verdict" }, [verdictBits]));
+        frag.appendChild(verdictBox);
+
+        heading("Top themes");
+        com.list.slice(0, 6).forEach(function (c, idx) {
           if (c.ids.length < 2 && com.list.length > 3) return;
           var ex = exemplar(c);
           var d = nodeIndex[ex] || {};
@@ -2290,11 +2310,58 @@
           bar.style.background = communityColor(c.index);
           btn.appendChild(bar);
           btn.appendChild(el("span", { class: "okf-lens-summary__label" },
-            ["Theme " + (c.index + 1) + " - around \u201c" + (d.label || ex) + "\u201d"]));
-          btn.appendChild(el("span", { class: "okf-lens-summary__note" }, [c.ids.length + " concepts"]));
+            [(idx + 1) + ". " + (d.label || ex)]));
+          btn.appendChild(el("span", { class: "okf-lens-summary__note" }, [c.ids.length + " nodes"]));
           btn.addEventListener("click", function () { clearPath(); showDetail(ex); });
           frag.appendChild(btn);
         });
+
+        if (orphans.length || gap) {
+          heading("Potential bridges");
+          var bridgeHints = [];
+          if (orphans.length) {
+            var hub = ids.slice().sort(function (a, b) { return (pr[b] || 0) - (pr[a] || 0); })[0];
+            bridgeHints.push({
+              a: orphans[0],
+              b: hub,
+              note: "High value",
+            });
+            if (orphans[1]) bridgeHints.push({ a: orphans[1], b: hub, note: "Suggested" });
+          }
+          if (gap) {
+            bridgeHints.push({ a: exemplar(gap[0]), b: exemplar(gap[1]), note: "Cross-theme" });
+          }
+          bridgeHints.slice(0, 3).forEach(function (h) {
+            var da = nodeIndex[h.a] || {}, db = nodeIndex[h.b] || {};
+            var row = el("div", { class: "okf-lens-summary__bridge" });
+            row.appendChild(el("span", { class: "okf-lens-summary__bridge-label" },
+              [(da.label || h.a) + " \u2194 " + (db.label || h.b)]));
+            row.appendChild(el("span", { class: "okf-lens-summary__bridge-note" }, [h.note]));
+            var plus = el("button", { type: "button", class: "okf-lens-summary__bridge-add", title: "Focus both ends" }, ["+"]);
+            plus.addEventListener("click", function () {
+              clearPath();
+              showDetail(h.a);
+              var nb = cy.getElementById(h.b);
+              if (nb && nb.length) {
+                try { showPathBetween(cy.getElementById(h.a), nb); } catch (err) {}
+              }
+            });
+            row.appendChild(plus);
+            frag.appendChild(row);
+          });
+        }
+
+        if (window._okfRecentGraph && window._okfRecentGraph.length) {
+          heading("Recently viewed");
+          window._okfRecentGraph.slice(0, 5).forEach(function (rid) {
+            var d = nodeIndex[rid] || {};
+            var btn = el("button", { type: "button", class: "okf-lens-summary__row okf-lens-summary__row--recent" });
+            btn.appendChild(el("span", { class: "okf-lens-summary__label" }, [d.label || rid]));
+            btn.appendChild(el("span", { class: "okf-lens-summary__note" }, ["open"]));
+            btn.addEventListener("click", function () { clearPath(); showDetail(rid); });
+            frag.appendChild(btn);
+          });
+        }
       }
       frag.appendChild(el("p", { class: "okf-lens-summary__hint okf-muted" },
         ["Click a row to open it on the canvas. Hover nodes to preview; shift-click two nodes to trace the path between them."]));
@@ -3191,6 +3258,12 @@
       if (content) content.hidden = false;
       showGraphCard(conceptId);
       if (typeof drawMinimap === "function") drawMinimap();
+      try {
+        window._okfRecentGraph = window._okfRecentGraph || [];
+        window._okfRecentGraph = [conceptId].concat(
+          window._okfRecentGraph.filter(function (x) { return x !== conceptId; })
+        ).slice(0, 8);
+      } catch (err) {}
 
       var chip = document.getElementById("detail-type");
       if (chip) {
