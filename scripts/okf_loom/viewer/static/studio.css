@@ -19,12 +19,9 @@
  */
 
 /* ---- 1. Studio bar ---------------------------------------------------- */
-/* iter2 CRI2-001: the studio bar is NON-STICKY on every viewport. iter-1
- * stacked it sticky under the topbar (~92px desktop, 3+ rows mobile) which
- * crowded the fold. The topbar stays sticky (brand + search); the studio
- * bar scrolls with the page. The command palette stays reachable via the
- * Ctrl/Cmd-K global shortcut (studio.js) even after the bar scrolls away,
- * so the palette button scrolling off is not a hard access loss. */
+/* Atlas composition: studio controls mount INLINE inside `.okf-topbar`
+ * (`.okf-studio-bar--inline`) so chrome is a single sticky row. The legacy
+ * sibling-bar layout remains as a fallback when no topbar controls exist. */
 .okf-studio-bar {
   display: flex;
   align-items: center;
@@ -38,6 +35,37 @@
   flex-shrink: 0;
   position: static;
 }
+.okf-studio-bar--inline {
+  display: flex;
+  align-items: center;
+  gap: var(--okf-space-2);
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  margin-left: var(--okf-space-2);
+}
+.okf-studio-bar--inline .okf-studio-bar__group {
+  gap: var(--okf-space-1);
+}
+/* Graph atlas: studio lives under the brand/search row (mockup-03 chrome). */
+.okf-studio-bar--graph {
+  min-height: 34px;
+  padding: 0 16px;
+  background: rgba(10, 14, 26, 0.92);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  color: #94a3b8;
+}
+.okf-studio-bar--graph .okf-studio-btn,
+.okf-studio-bar--graph button,
+.okf-studio-bar--graph a {
+  color: #94a3b8;
+}
+.okf-studio-bar--graph .okf-studio-btn:hover,
+.okf-studio-bar--graph button:hover {
+  color: #e8eefc;
+}
 .okf-studio-bar__group {
   display: flex;
   align-items: center;
@@ -46,6 +74,65 @@
 }
 .okf-studio-bar__group--right { flex-wrap: nowrap; }
 .okf-studio-bar[hidden] { display: none; }
+
+/* Quiet count buttons: badge hides at zero; the control stays reachable. */
+.okf-studiobtn--quiet {
+  opacity: 0.72;
+}
+.okf-studiobtn .okf-badge[data-count="0"] {
+  display: none;
+}
+
+/* Presence drawer (compact button → expands status / watching / live). */
+.okf-presence-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.okf-presence-menu__btn {
+  gap: 6px;
+  max-width: 14ch;
+}
+.okf-presence-menu__btn .okf-presence__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--okf-fg-muted);
+  flex-shrink: 0;
+}
+.okf-presence-menu__btn[data-state="watching"] .okf-presence__dot { background: var(--okf-ok); }
+.okf-presence-menu__btn[data-state="thinking"] .okf-presence__dot { background: var(--okf-warn); }
+.okf-presence-menu__btn[data-state="editing"] .okf-presence__dot { background: var(--okf-accent); }
+.okf-presence-menu__btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.okf-presence-menu__drawer {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--okf-space-2);
+  min-width: 220px;
+  padding: var(--okf-space-3);
+  background: var(--okf-bg-elev);
+  border: 1px solid var(--okf-border-strong);
+  border-radius: var(--okf-radius);
+  box-shadow: var(--okf-shadow);
+}
+.okf-presence-menu__drawer[hidden] { display: none !important; }
+.okf-presence-menu__drawer .okf-presence {
+  max-width: none;
+  width: 100%;
+}
+.okf-presence-menu__drawer .okf-watch-toggle,
+.okf-presence-menu__drawer .okf-conn {
+  width: 100%;
+  justify-content: flex-start;
+}
 
 /* Studio buttons reuse the topbar control look but a touch denser. */
 .okf-studiobtn {
@@ -1271,14 +1358,20 @@ html.okf-studio-booted .okf-studio-fallback-banner { display: none; }
 
 /* ---- 10. Responsive + reduced motion --------------------------------- */
 @media (max-width: 900px) {
-  /* iter2 CRI2-001: studio bar is non-sticky on every viewport (see §1).
-   * On small screens it still wraps so all controls stay reachable, but it
-   * scrolls with the page rather than stacking sticky under the topbar. */
-  .okf-studio-bar {
+  /* Inline studio cluster stays in the sticky topbar; only the legacy
+   * sibling-bar layout wraps. */
+  .okf-studio-bar:not(.okf-studio-bar--inline) {
     position: static;
     flex-wrap: wrap;
     padding: var(--okf-space-2) var(--okf-space-3);
     gap: var(--okf-space-2);
+  }
+  .okf-studio-bar--inline {
+    margin-left: 0;
+  }
+  .okf-presence-menu__drawer {
+    right: auto;
+    left: 0;
   }
   .okf-presence { max-width: 100%; }
   .okf-view[data-okf-view="split"] {
