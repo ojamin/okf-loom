@@ -34,8 +34,8 @@
   display: none !important;
 }
 .okf-viewer--graph .okf-topbar--graph {
-  display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(280px, 420px) minmax(140px, 1fr);
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 12px;
   height: 52px;
@@ -52,14 +52,45 @@
   letter-spacing: -0.02em;
 }
 .okf-viewer--graph .okf-topbar--graph .okf-muted { color: var(--okf-atlas-muted); }
+.okf-viewer--graph .okf-topbar__brand { flex: 0 1 auto; min-width: 0; }
+.okf-viewer--graph .okf-mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--okf-atlas-border);
+  flex: 0 0 auto;
+}
+.okf-viewer--graph .okf-mode-switch__btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--okf-atlas-muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.okf-viewer--graph .okf-mode-switch__btn:hover { color: var(--okf-atlas-fg); }
+.okf-viewer--graph .okf-mode-switch__btn.is-active {
+  background: rgba(62, 201, 201, 0.18);
+  color: #7eeaea;
+}
 .okf-viewer--graph .okf-topbar__controls {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
 }
 .okf-viewer--graph .okf-search-form--graph {
-  grid-column: 2;
   position: relative;
-  width: 100%;
-  max-width: none;
+  flex: 1 1 280px;
+  max-width: 28rem;
   margin: 0;
 }
 .okf-viewer--graph .okf-search-form--graph input {
@@ -1230,4 +1261,224 @@
 
 @media (prefers-reduced-motion: reduce) {
   .okf-signal__advanced > summary::after { transition: none !important; }
+}
+
+/* ---- Flow Atlas (Discover | Flows | Atlas) ------------------------------ */
+.okf-discover {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: auto;
+  padding: 20px 24px 32px;
+  background:
+    linear-gradient(180deg, rgba(5, 8, 16, 0.72), rgba(5, 8, 16, 0.88)),
+    transparent;
+  backdrop-filter: blur(6px);
+}
+.okf-discover[hidden] { display: none !important; }
+.okf-layout--flow-atlas[data-atlas-mode="discover"] #okf-graph canvas {
+  opacity: 0.18;
+}
+.okf-discover--flower {
+  inset: auto 0 0 0;
+  top: 42%;
+  background: rgba(5, 8, 16, 0.82);
+  border-top: 1px solid var(--okf-atlas-border);
+}
+.okf-layout--flow-atlas[data-atlas-mode="discover"] .okf-discover--flower ~ * {
+  /* keep sibling overlays usable */
+}
+.okf-layout--flow-atlas[data-atlas-mode="discover"] .okf-discover--flower {
+  /* when flowering, reveal canvas above */
+}
+.okf-layout--flow-atlas[data-atlas-mode="discover"]:has(.okf-discover--flower) #okf-graph canvas {
+  opacity: 1;
+}
+.okf-discover__head { max-width: 52rem; margin-bottom: 18px; }
+.okf-discover__title {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--okf-atlas-fg);
+}
+.okf-discover__lede { margin: 0; max-width: 40rem; }
+.okf-discover__board {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 56rem;
+}
+.okf-discover__section-title {
+  margin: 0 0 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--okf-atlas-muted);
+}
+.okf-discover__section {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.okf-discover__section-title {
+  grid-column: 1 / -1;
+}
+.okf-discover-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--okf-atlas-border);
+  background: rgba(14, 20, 36, 0.72);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  text-align: left;
+  color: var(--okf-atlas-fg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.okf-discover-card:hover,
+.okf-discover-card:focus-visible {
+  border-color: rgba(62, 201, 201, 0.45);
+  outline: none;
+}
+.okf-discover-card--start { border-color: rgba(62, 201, 201, 0.35); }
+.okf-discover-card--gap { border-color: rgba(251, 146, 60, 0.35); }
+.okf-discover-card--stale { border-color: rgba(250, 204, 21, 0.3); }
+.okf-discover-card--warn { border-color: rgba(248, 113, 113, 0.4); }
+.okf-discover-card__kicker {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7eeaea;
+}
+.okf-discover-card--gap .okf-discover-card__kicker { color: #fdba74; }
+.okf-discover-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.okf-discover-card__msg {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.okf-discover-card__ids {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--okf-atlas-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.okf-discover-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.okf-discover-card__btn {
+  appearance: none;
+  border: 1px solid var(--okf-atlas-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--okf-atlas-fg);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.okf-discover-card__btn--primary {
+  border-color: rgba(62, 201, 201, 0.4);
+  background: rgba(62, 201, 201, 0.14);
+  color: #7eeaea;
+}
+.okf-graph-rail__blurb { margin: 0 0 10px; font-size: var(--okf-text-sm); line-height: 1.4; }
+.okf-graph-rail__stat {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: #7eeaea;
+  font-weight: 700;
+}
+.okf-flow-seed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.okf-flow-seed input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--okf-atlas-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--okf-atlas-fg);
+  font: inherit;
+  font-size: 0.85rem;
+}
+.okf-flow-recipes,
+.okf-flow-density {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.okf-flow-recipes__btn,
+.okf-flow-density__btn {
+  appearance: none;
+  border: 1px solid var(--okf-atlas-border);
+  background: transparent;
+  color: var(--okf-atlas-muted);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.okf-flow-recipes__btn.is-active,
+.okf-flow-density__btn.is-active {
+  background: rgba(62, 201, 201, 0.14);
+  border-color: rgba(62, 201, 201, 0.4);
+  color: #7eeaea;
+}
+.okf-insight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.okf-insight-actions[hidden] { display: none !important; }
+.okf-insight-actions__btn {
+  appearance: none;
+  border: 1px solid var(--okf-atlas-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--okf-atlas-fg);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.okf-insight-actions__btn:hover {
+  border-color: rgba(62, 201, 201, 0.45);
+  color: #7eeaea;
+}
+.okf-layout--flow-atlas[data-atlas-mode="flows"] .okf-discover,
+.okf-layout--flow-atlas[data-atlas-mode="atlas"] .okf-discover {
+  display: none !important;
+}
+@media (max-width: 900px) {
+  .okf-viewer--graph .okf-mode-switch { order: 3; width: 100%; justify-content: stretch; }
+  .okf-viewer--graph .okf-mode-switch__btn { flex: 1; }
+  .okf-viewer--graph .okf-topbar--graph { flex-wrap: wrap; height: auto; padding: 8px 12px; }
 }

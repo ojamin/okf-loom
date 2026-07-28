@@ -19,6 +19,7 @@ Routes:
     /__search?q=...         search results page (HTML or JSON if ?format=json)
     /__raw/<concept_id>     raw markdown body
     /__data/graph.json      graph JSON (for external tools / harness embed)
+    /__data/discover.json   ranked Flow Atlas discovery findings
     /__data/content.json    content index JSON
     /__static/<file>        static asset (CSS / JS)
     /<path>.<media ext>     bundle-local media file (png/jpg/webp/gif/svg/
@@ -46,6 +47,7 @@ from .paths import ConceptId, ConceptIdError, concept_id_from_str, concept_id_to
 from .studio import Studio, rev_of
 from .render import (
     build_graph_data,
+    build_graph_findings,
     _render_concept_page,
     _render_index_page,
     _render_search_page,
@@ -1151,6 +1153,8 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
             return self._handle_search(query)
         if path == "/__data/graph.json":
             return self._handle_graph_json()
+        if path == "/__data/discover.json":
+            return self._handle_discover_json()
         if path == "/__data/content.json":
             return self._handle_content_json()
         if path.startswith("/__raw/"):
@@ -1321,6 +1325,10 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
     def _handle_graph_json(self) -> None:
         data = build_graph_data(self.bundle, name=self.display_name)
         self._send_json(200, data)
+
+    def _handle_discover_json(self) -> None:
+        findings = build_graph_findings(self.bundle)
+        self._send_json(200, {"findings": findings, "total": len(findings)})
 
     def _handle_content_json(self) -> None:
         data = _content_index_json(self.bundle)

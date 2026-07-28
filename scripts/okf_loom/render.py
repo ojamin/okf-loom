@@ -3,6 +3,7 @@
 Public API:
     render_single_file(bundle, out_path, *, name=None) -> dict
     build_site(bundle, out_dir, *, target, name=None) -> dict
+    build_graph_findings(bundle) -> list[dict]
 
 Both functions are pure-Python (stdlib + pyyaml). The single-file viewer
 embeds the bundle as JSON and uses Cytoscape.js from CDN (markdown is
@@ -20,6 +21,7 @@ import math
 import os
 import re
 import tempfile
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -385,6 +387,207 @@ def _graph_grouping_metadata(concept: Concept) -> dict[str, str]:
     return out
 
 
+def _finding_title(action: str, message: str) -> str:
+    """Return a concise display title for a discovery suggestion."""
+    text = action.strip()
+    if not text:
+        text = message.strip().splitlines()[0] if message.strip() else "Finding"
+        if len(text) > 96:
+            text = text[:93].rstrip() + "..."
+    return text[:1].upper() + text[1:]
+
+
+def _timestamp_date(value: Any) -> date | None:
+    """Parse the common ISO-8601 timestamp forms used in frontmatter."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text)
+        except ValueError:
+            return None
+
+
+def build_graph_findings(bundle: Bundle) -> list[dict[str, Any]]:
+    """Build ranked, deterministic Flow Atlas discovery findings.
+
+    Discovery suggestions are augmented with graph-derived orphan, stale-hub,
+    and start-here findings. Discovery is optional here: an import or rule
+    failure does not prevent the graph-derived findings from being returned.
+    """
+    graph = bundle.graph()
+    logical_links = graph.logical_edges()
+    degrees = {cid: 0 for cid in bundle.concepts}
+    for link in logical_links:
+        if link.source in degrees:
+            degrees[link.source] += 1
+        if link.target in degrees:
+            degrees[link.target] += 1
+
+    findings: list[dict[str, Any]] = []
+
+    # Discovery is deliberately isolated from the graph-derived fallbacks.
+    # A broken optional discovery rule must not make the graph JSON unusable.
+    try:
+        from .discover import discover_suggestions
+
+        report = discover_suggestions(bundle)
+        for suggestion in report.suggestions:
+            payload = suggestion.as_dict()
+            detail = dict(payload.get("detail") or {})
+            confidence = detail.get("confidence", 0.5)
+            try:
+                score = float(confidence)
+            except (TypeError, ValueError):
+                score = 0.5
+            if not math.isfinite(score):
+                score = 0.5
+            message = str(payload.get("message") or "")
+            action = str(payload.get("action") or "")
+            findings.append({
+                "kind": str(payload.get("rule") or "suggestion"),
+                "severity": str(payload.get("severity") or "info"),
+                "title": _finding_title(action, message),
+                "message": message,
+                "concept_id": payload.get("concept_id"),
+                "target_concept_id": payload.get("target_concept_id"),
+                "action": action,
+                "detail": detail,
+                "score": score,
+            })
+    except Exception:
+        pass
+
+    sorted_concepts = sorted(bundle.concepts.values(), key=lambda c: c.id)
+    for concept in sorted_concepts:
+        degree = degrees[concept.id]
+        if degree != 0:
+            continue
+        concept_id = concept_id_to_str(concept.id)
+        findings.append({
+            "kind": "orphan",
+            "severity": "warning",
+            "title": "Unlinked concept",
+            "message": (
+                f"{concept.title!r} has no incoming or outgoing logical links."
+            ),
+            "concept_id": concept_id,
+            "target_concept_id": None,
+            "action": "link concept",
+            "detail": {"degree": 0},
+            "score": 0.7,
+        })
+
+    today = datetime.now(timezone.utc).date()
+    for concept in sorted_concepts:
+        degree = degrees[concept.id]
+        if degree < 3:
+            continue
+        timestamp = str(concept.frontmatter.get("timestamp") or "").strip()
+        timestamp_date = _timestamp_date(timestamp)
+        age_days = (today - timestamp_date).days if timestamp_date else None
+        if timestamp and (age_days is None or age_days <= 180):
+            continue
+        concept_id = concept_id_to_str(concept.id)
+        if timestamp:
+            message = (
+                f"{concept.title!r} is a {degree}-link hub whose timestamp is "
+                f"{age_days} days old."
+            )
+        else:
+            message = (
+                f"{concept.title!r} is a {degree}-link hub with no timestamp."
+            )
+        findings.append({
+            "kind": "stale_hub",
+            "severity": "warning",
+            "title": "Review stale hub",
+            "message": message,
+            "concept_id": concept_id,
+            "target_concept_id": None,
+            "action": "review concept",
+            "detail": {
+                "degree": degree,
+                "timestamp": timestamp,
+                "age_days": age_days,
+            },
+            "score": 0.55,
+        })
+
+    start_candidates: list[tuple[tuple[Any, ...], Concept, list[str]]] = []
+    for concept in sorted_concepts:
+        type_key = re.sub(r"[\s_]+", "-", (concept.type or "").strip().lower())
+        tags = [
+            re.sub(r"[\s_]+", "-", tag.strip().lower())
+            for tag in concept.tags
+        ]
+        has_start_tag = any("getting-started" in tag for tag in tags)
+        is_tutorial = "tutorial" in type_key or any("tutorial" in tag for tag in tags)
+        is_how_to = (
+            "how-to" in type_key
+            or "howto" in type_key
+            or any("how-to" in tag or "howto" in tag for tag in tags)
+        )
+        if not (has_start_tag or is_tutorial or is_how_to):
+            continue
+        degree = degrees[concept.id]
+        # Explicit getting-started tags are authoritative. Other tutorial
+        # candidates need at least one logical connection to be useful entry
+        # points.
+        if degree == 0 and not has_start_tag:
+            continue
+        reasons: list[str] = []
+        if has_start_tag:
+            reasons.append("getting-started tag")
+        if is_tutorial:
+            reasons.append("tutorial type or tag")
+        if is_how_to:
+            reasons.append("how-to type or tag")
+        rank = (
+            0 if has_start_tag else 1,
+            0 if is_tutorial else 1,
+            0 if is_how_to else 1,
+            -degree,
+            -len(concept.body or ""),
+            concept_id_to_str(concept.id),
+        )
+        start_candidates.append((rank, concept, reasons))
+
+    for _, concept, reasons in sorted(start_candidates, key=lambda item: item[0])[:5]:
+        concept_id = concept_id_to_str(concept.id)
+        degree = degrees[concept.id]
+        findings.append({
+            "kind": "start_here",
+            "severity": "info",
+            "title": concept.title,
+            "message": (
+                f"{concept.title!r} is a strong starting point "
+                f"({', '.join(reasons)}; {degree} logical links)."
+            ),
+            "concept_id": concept_id,
+            "target_concept_id": None,
+            "action": "open concept",
+            "detail": {
+                "degree": degree,
+                "body_chars": len(concept.body or ""),
+                "reasons": reasons,
+            },
+            "score": 0.9,
+        })
+
+    findings.sort(key=lambda finding: (
+        -float(finding["score"]),
+        str(finding["kind"]),
+        str(finding.get("concept_id") or ""),
+        str(finding.get("target_concept_id") or ""),
+        str(finding.get("title") or ""),
+    ))
+    return findings[:40]
+
+
 def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, Any]:
     """Serialise a Bundle into the JSON shape consumed by the viewer.
 
@@ -402,6 +605,8 @@ def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, An
           "types": [str],
           "palette": {type: css_color},
           "backlinks": {target_id: [source_id, ...]},
+          "findings": [{kind, severity, title, message, concept_id,
+                        target_concept_id, action, detail, score}],
         }
 
     The §7 governed keys (P1-3 iter-1) are always present per node,
@@ -538,6 +743,7 @@ def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, An
         "types": types,
         "palette": palette,
         "backlinks": backlinks,
+        "findings": build_graph_findings(bundle),
         # Phase 3: icon-key → SVG inner markup, so graph.js can build node
         # glyph data-URIs from the same curated set the wiki uses.
         "icon_paths": type_icon_paths(),
@@ -718,7 +924,13 @@ def render_single_file(
     # Bundle renderers.js too so the single-file detail panel gets
     # the same mermaid/hljs/KaTeX treatment as the wiki + graph views
     # (graph.js dispatches okf-loom:bodyPatched after every showDetail).
-    js = load_static("graph.js", bundle) + "\n" + load_static("renderers.js", bundle)
+    js = (
+        load_static("graph.js", bundle)
+        + "\n"
+        + load_static("flow-atlas.js", bundle)
+        + "\n"
+        + load_static("renderers.js", bundle)
+    )
 
     initial_theme = "light"
     if config.get("theme") in _THEMES:
@@ -2648,6 +2860,7 @@ def _render_graph_page(
     template = load_template("graph_page.html", bundle)
     static_prefix = "/__static" if mode in ("serve", "spa") else "__static"
     data_url = "/__data/graph.json" if mode in ("serve", "spa") else ""
+    discover_url = "/__data/discover.json" if mode in ("serve", "spa") else ""
     graph_data_inline = ""
     if mode == "static":
         payload = graph_data if graph_data is not None else build_graph_data(bundle, name=name)
@@ -2680,6 +2893,7 @@ def _render_graph_page(
     # okf-loom:bodyPatched after each showDetail() so renderers.js re-scans.
     graph_js = (
         f'<script src="{static_prefix}/graph.js" defer></script>\n'
+        f'<script src="{static_prefix}/flow-atlas.js" defer></script>\n'
         f'<script src="{static_prefix}/renderers.js" defer></script>'
     )
 
@@ -2688,7 +2902,7 @@ def _render_graph_page(
         .replace("__LANG__", "en")
         .replace("__THEME_ATTR__", theme_attr)
         .replace("__DATA_ATTRS__", data_attrs)
-        .replace("__HEAD_TITLE__", _esc(f"Graph — {name}"))
+        .replace("__HEAD_TITLE__", _esc(f"Flow Atlas — {name}"))
         .replace("__BUNDLE_NAME__", _esc(name))
         .replace("__STATIC_PREFIX__", static_prefix)
         .replace("__WIKI_CSS_LINK__", css_link)
@@ -2699,6 +2913,7 @@ def _render_graph_page(
         .replace("__INITIAL_THEME_BUTTON__", _theme_button_html(initial_theme))
         .replace("__INITIAL_LAYOUT__", initial_layout)
         .replace("__GRAPH_DATA_URL__", data_url)
+        .replace("__DISCOVER_DATA_URL__", discover_url)
         .replace("__GRAPH_DATA_INLINE__", graph_data_inline)
         .replace("__BACK_LINK__", back_link)
     )

@@ -3778,11 +3778,28 @@
         applyLens: applyLens,
         communityOf: function () { try { return JSON.parse(JSON.stringify(communityOf)); } catch (e) { return {}; } },
         focusRoot: function () { return focusRoot; },
+        setFocusRoot: function (id) { focusRoot = id || null; },
+        showDetail: showDetail,
+        clearSelection: clearSelection,
+        showPathBetween: showPathBetween,
+        clearPath: clearPath,
+        applyFilters: applyFilters,
+        overlayAwareFit: overlayAwareFit,
+        scheduleLayout: scheduleLayout,
+        controlState: controlState,
+        nodeIndex: nodeIndex,
+        bundle: bundle,
+        findings: function () {
+          return (bundle && Array.isArray(bundle.findings)) ? bundle.findings.slice() : [];
+        },
         layoutStats: layoutStats,
         // Live-refresh fence counters (present only when the live layer wired
         // the DATA_URL refresh). Used to prove stale responses are dropped.
         refreshStats: (typeof refreshStats !== "undefined") ? refreshStats : null
       };
+      try {
+        window.dispatchEvent(new CustomEvent("okf-loom:graphReady", { detail: { api: window.__okfLoomGraph } }));
+      } catch (evErr) {}
     } catch (e) {}
   }
 
