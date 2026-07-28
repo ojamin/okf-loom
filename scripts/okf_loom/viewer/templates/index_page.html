@@ -9,16 +9,15 @@
       __BUNDLE_NAME__    → display name
   __STATIC_PREFIX__  → URL prefix for /__static/ assets
   __DATA_ATTRS__     → extra data-* attributes for the SPA/static JS hook
-                       (P1-10: lets wiki.js detect static mode on index pages
-                       so the static-search-note shows correctly)
   __WIKI_CSS_LINK__  → <link rel="stylesheet" href="...wiki.css">
   __WIKI_JS_LINK__   → <script src="...wiki.js" defer></script>
   __RENDERERS_JS_LINK__ → <script src="...renderers.js" defer></script>
-                       (progressive renderers + markdown UX enhancers
-                       for tables/code/images in rendered prose)
       __INDEX_TITLE__    → page <h1>
-      __INDEX_INTRO__    → optional intro HTML (e.g. bundle description)
-      __GROUPS_HTML__    → concepts grouped by type, as HTML cards/lists
+      __INDEX_INTRO__    → short lede HTML
+      __HERO_STATS__     → CTA + stats chips
+      __ORIENT_HTML__    → Start here / Recent / Themes / Map rails
+      __ABOUT_HTML__     → optional About this bundle disclosure
+      __GROUPS_HTML__    → Browse-all card grids (or subdir lists)
       __SUBDIRS_HTML__   → subdirectory index links
       __GLOBAL_GRAPH_LINK__ → URL to the global graph page
 -->
@@ -45,14 +44,15 @@ __WIKI_CSS_LINK__
 <p class="okf-studio-fallback-banner" role="status">Live studio unavailable. Showing a read-only view.</p>
 
 <main id="okf-main" class="okf-index">
-  <header class="okf-hero">
+  <header class="okf-hero okf-hero--atlas">
     <h1 class="okf-index__title">__INDEX_TITLE__</h1>
+    <div class="okf-index__intro okf-prose okf-hero__lede-wrap">__INDEX_INTRO__</div>
     __HERO_STATS__
-    <div class="okf-index__intro okf-prose">__INDEX_INTRO__</div>
   </header>
 
+  __ORIENT_HTML__
+  __ABOUT_HTML__
   __SUBDIRS_HTML__
-
   __GROUPS_HTML__
 </main>
 

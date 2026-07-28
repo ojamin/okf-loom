@@ -3,6 +3,7 @@
 Public API:
     render_single_file(bundle, out_path, *, name=None) -> dict
     build_site(bundle, out_dir, *, target, name=None) -> dict
+    build_graph_findings(bundle) -> list[dict]
 
 Both functions are pure-Python (stdlib + pyyaml). The single-file viewer
 embeds the bundle as JSON and uses Cytoscape.js from CDN (markdown is
@@ -16,9 +17,11 @@ watchdog, atomic writes for build output.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -384,6 +387,207 @@ def _graph_grouping_metadata(concept: Concept) -> dict[str, str]:
     return out
 
 
+def _finding_title(action: str, message: str) -> str:
+    """Return a concise display title for a discovery suggestion."""
+    text = action.strip()
+    if not text:
+        text = message.strip().splitlines()[0] if message.strip() else "Finding"
+        if len(text) > 96:
+            text = text[:93].rstrip() + "..."
+    return text[:1].upper() + text[1:]
+
+
+def _timestamp_date(value: Any) -> date | None:
+    """Parse the common ISO-8601 timestamp forms used in frontmatter."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text)
+        except ValueError:
+            return None
+
+
+def build_graph_findings(bundle: Bundle) -> list[dict[str, Any]]:
+    """Build ranked, deterministic Flow Atlas discovery findings.
+
+    Discovery suggestions are augmented with graph-derived orphan, stale-hub,
+    and start-here findings. Discovery is optional here: an import or rule
+    failure does not prevent the graph-derived findings from being returned.
+    """
+    graph = bundle.graph()
+    logical_links = graph.logical_edges()
+    degrees = {cid: 0 for cid in bundle.concepts}
+    for link in logical_links:
+        if link.source in degrees:
+            degrees[link.source] += 1
+        if link.target in degrees:
+            degrees[link.target] += 1
+
+    findings: list[dict[str, Any]] = []
+
+    # Discovery is deliberately isolated from the graph-derived fallbacks.
+    # A broken optional discovery rule must not make the graph JSON unusable.
+    try:
+        from .discover import discover_suggestions
+
+        report = discover_suggestions(bundle)
+        for suggestion in report.suggestions:
+            payload = suggestion.as_dict()
+            detail = dict(payload.get("detail") or {})
+            confidence = detail.get("confidence", 0.5)
+            try:
+                score = float(confidence)
+            except (TypeError, ValueError):
+                score = 0.5
+            if not math.isfinite(score):
+                score = 0.5
+            message = str(payload.get("message") or "")
+            action = str(payload.get("action") or "")
+            findings.append({
+                "kind": str(payload.get("rule") or "suggestion"),
+                "severity": str(payload.get("severity") or "info"),
+                "title": _finding_title(action, message),
+                "message": message,
+                "concept_id": payload.get("concept_id"),
+                "target_concept_id": payload.get("target_concept_id"),
+                "action": action,
+                "detail": detail,
+                "score": score,
+            })
+    except Exception:
+        pass
+
+    sorted_concepts = sorted(bundle.concepts.values(), key=lambda c: c.id)
+    for concept in sorted_concepts:
+        degree = degrees[concept.id]
+        if degree != 0:
+            continue
+        concept_id = concept_id_to_str(concept.id)
+        findings.append({
+            "kind": "orphan",
+            "severity": "warning",
+            "title": "Unlinked concept",
+            "message": (
+                f"{concept.title!r} has no incoming or outgoing logical links."
+            ),
+            "concept_id": concept_id,
+            "target_concept_id": None,
+            "action": "link concept",
+            "detail": {"degree": 0},
+            "score": 0.7,
+        })
+
+    today = datetime.now(timezone.utc).date()
+    for concept in sorted_concepts:
+        degree = degrees[concept.id]
+        if degree < 3:
+            continue
+        timestamp = str(concept.frontmatter.get("timestamp") or "").strip()
+        timestamp_date = _timestamp_date(timestamp)
+        age_days = (today - timestamp_date).days if timestamp_date else None
+        if timestamp and (age_days is None or age_days <= 180):
+            continue
+        concept_id = concept_id_to_str(concept.id)
+        if timestamp:
+            message = (
+                f"{concept.title!r} is a {degree}-link hub whose timestamp is "
+                f"{age_days} days old."
+            )
+        else:
+            message = (
+                f"{concept.title!r} is a {degree}-link hub with no timestamp."
+            )
+        findings.append({
+            "kind": "stale_hub",
+            "severity": "warning",
+            "title": "Review stale hub",
+            "message": message,
+            "concept_id": concept_id,
+            "target_concept_id": None,
+            "action": "review concept",
+            "detail": {
+                "degree": degree,
+                "timestamp": timestamp,
+                "age_days": age_days,
+            },
+            "score": 0.55,
+        })
+
+    start_candidates: list[tuple[tuple[Any, ...], Concept, list[str]]] = []
+    for concept in sorted_concepts:
+        type_key = re.sub(r"[\s_]+", "-", (concept.type or "").strip().lower())
+        tags = [
+            re.sub(r"[\s_]+", "-", tag.strip().lower())
+            for tag in concept.tags
+        ]
+        has_start_tag = any("getting-started" in tag for tag in tags)
+        is_tutorial = "tutorial" in type_key or any("tutorial" in tag for tag in tags)
+        is_how_to = (
+            "how-to" in type_key
+            or "howto" in type_key
+            or any("how-to" in tag or "howto" in tag for tag in tags)
+        )
+        if not (has_start_tag or is_tutorial or is_how_to):
+            continue
+        degree = degrees[concept.id]
+        # Explicit getting-started tags are authoritative. Other tutorial
+        # candidates need at least one logical connection to be useful entry
+        # points.
+        if degree == 0 and not has_start_tag:
+            continue
+        reasons: list[str] = []
+        if has_start_tag:
+            reasons.append("getting-started tag")
+        if is_tutorial:
+            reasons.append("tutorial type or tag")
+        if is_how_to:
+            reasons.append("how-to type or tag")
+        rank = (
+            0 if has_start_tag else 1,
+            0 if is_tutorial else 1,
+            0 if is_how_to else 1,
+            -degree,
+            -len(concept.body or ""),
+            concept_id_to_str(concept.id),
+        )
+        start_candidates.append((rank, concept, reasons))
+
+    for _, concept, reasons in sorted(start_candidates, key=lambda item: item[0])[:5]:
+        concept_id = concept_id_to_str(concept.id)
+        degree = degrees[concept.id]
+        findings.append({
+            "kind": "start_here",
+            "severity": "info",
+            "title": concept.title,
+            "message": (
+                f"{concept.title!r} is a strong starting point "
+                f"({', '.join(reasons)}; {degree} logical links)."
+            ),
+            "concept_id": concept_id,
+            "target_concept_id": None,
+            "action": "open concept",
+            "detail": {
+                "degree": degree,
+                "body_chars": len(concept.body or ""),
+                "reasons": reasons,
+            },
+            "score": 0.9,
+        })
+
+    findings.sort(key=lambda finding: (
+        -float(finding["score"]),
+        str(finding["kind"]),
+        str(finding.get("concept_id") or ""),
+        str(finding.get("target_concept_id") or ""),
+        str(finding.get("title") or ""),
+    ))
+    return findings[:40]
+
+
 def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, Any]:
     """Serialise a Bundle into the JSON shape consumed by the viewer.
 
@@ -401,6 +605,8 @@ def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, An
           "types": [str],
           "palette": {type: css_color},
           "backlinks": {target_id: [source_id, ...]},
+          "findings": [{kind, severity, title, message, concept_id,
+                        target_concept_id, action, detail, score}],
         }
 
     The §7 governed keys (P1-3 iter-1) are always present per node,
@@ -537,6 +743,7 @@ def build_graph_data(bundle: Bundle, *, name: str | None = None) -> dict[str, An
         "types": types,
         "palette": palette,
         "backlinks": backlinks,
+        "findings": build_graph_findings(bundle),
         # Phase 3: icon-key → SVG inner markup, so graph.js can build node
         # glyph data-URIs from the same curated set the wiki uses.
         "icon_paths": type_icon_paths(),
@@ -608,7 +815,7 @@ def _nav_controls_html(
     return (
         '<div class="okf-topbar__controls">'
         f'<form action="{search_target}" method="get" role="search" class="okf-search-form">'
-        '<input type="search" name="q" placeholder="Search\u2026" autocomplete="off"'
+        '<input type="search" name="q" placeholder="Search the atlas\u2026" autocomplete="off"'
         f' aria-label="Search"{search_value}>'
         '</form>'
         f'<a class="okf-btn" href="{graph_link}">Graph</a>'
@@ -717,7 +924,13 @@ def render_single_file(
     # Bundle renderers.js too so the single-file detail panel gets
     # the same mermaid/hljs/KaTeX treatment as the wiki + graph views
     # (graph.js dispatches okf-loom:bodyPatched after every showDetail).
-    js = load_static("graph.js", bundle) + "\n" + load_static("renderers.js", bundle)
+    js = (
+        load_static("graph.js", bundle)
+        + "\n"
+        + load_static("flow-atlas.js", bundle)
+        + "\n"
+        + load_static("renderers.js", bundle)
+    )
 
     initial_theme = "light"
     if config.get("theme") in _THEMES:
@@ -1362,6 +1575,11 @@ def _render_concept_page(
         f'<span class="okf-tag">{_esc(t)}</span>' for t in concept.tags
     )
 
+    # Infobox owns resource + tags + relations; header keeps entities etc.
+    infobox_html = _render_infobox(
+        concept, mode=mode, resource_html=resource_html, tags_html=tags_html,
+    )
+
     # Backlinks ("Cited by").
     backlinks = graph.backlinks(concept.id)
     backlinks_html = _render_link_list(
@@ -1475,13 +1693,14 @@ def _render_concept_page(
         .replace("__CONCEPT_TITLE__", _esc(concept.title))
         .replace("__CONCEPT_SUBTITLE__", subtitle_html)
         .replace("__CONCEPT_DESCRIPTION__", _esc(concept.description))
-        .replace("__CONCEPT_RESOURCE__", resource_html)
-        .replace("__CONCEPT_TAGS__", tags_html)
+        .replace("__CONCEPT_RESOURCE__", "")  # moved to infobox
+        .replace("__CONCEPT_TAGS__", "")  # moved to infobox
         .replace("__CONCEPT_BODY__", body_html)
         .replace("__BACKLINKS_HTML__", backlinks_html)
         .replace("__OUTGOING_HTML__", outgoing_html)
         .replace("__FRONTMATTER_HTML__", frontmatter_html)
         .replace("__GOVERNED_HTML__", governed_html)
+        .replace("__INFOBOX_HTML__", infobox_html)
         .replace("__LOCAL_GRAPH_DATA__", _esc(local_data))
     )
     # P2-68: strip empty ``<section class="okf-relations__block">`` blocks
@@ -1732,6 +1951,88 @@ def _render_breadcrumb(concept: Concept, *, mode: str, name: str) -> str:
     )
 
 
+def _render_infobox(
+    concept: Concept,
+    *,
+    mode: str,
+    resource_html: str,
+    tags_html: str,
+) -> str:
+    """Right-rail infobox: typed relations, tags, timestamp, resource CTA."""
+    sections: list[str] = [
+        '<aside class="okf-page__infobox" aria-label="Concept facts">'
+        '<h2 class="okf-infobox__title">Infobox</h2>'
+    ]
+
+    relations = concept.frontmatter.get("relations")
+    rel_rows: list[str] = []
+    if relations and isinstance(relations, list):
+        for rel in relations:
+            if not isinstance(rel, dict):
+                continue
+            rel_type = _esc(str(rel.get("type", "related")))
+            rel_target = _esc(str(rel.get("target", "")))
+            if not rel_target:
+                continue
+            rel_rows.append(
+                f'<div class="okf-infobox__rel">'
+                f'<span class="okf-rel-type">{rel_type}</span>'
+                f'<span aria-hidden="true">→</span>'
+                f'<span>{rel_target}</span></div>'
+            )
+    if rel_rows:
+        more = ""
+        shown = rel_rows[:7]
+        if len(rel_rows) > 7:
+            more = f'<p class="okf-infobox__meta">View all relations ({len(rel_rows)})</p>'
+        sections.append(
+            '<div class="okf-infobox__section">'
+            '<div class="okf-infobox__label">Relations</div>'
+            + "".join(shown) + more + "</div>"
+        )
+
+    if tags_html:
+        sections.append(
+            '<div class="okf-infobox__section">'
+            '<div class="okf-infobox__label">Tags</div>'
+            f'<div class="okf-infobox__tags">{tags_html}</div></div>'
+        )
+
+    ts = concept.frontmatter.get("timestamp") or concept.frontmatter.get("updated")
+    if ts:
+        sections.append(
+            '<div class="okf-infobox__section">'
+            '<div class="okf-infobox__label">Last modified</div>'
+            f'<div class="okf-infobox__meta"><time>{_esc(str(ts))}</time></div></div>'
+        )
+
+    if resource_html:
+        # Promote the resource link to a CTA button when it's an <a>.
+        if resource_html.startswith("<a "):
+            resource_cta = resource_html.replace(
+                'class="okf-external"',
+                'class="okf-external okf-infobox__resource"',
+                1,
+            )
+            # Prefer short label.
+            resource_cta = re.sub(
+                r"(>)([^<]+)(</a>)",
+                r"\1Open resource\3",
+                resource_cta,
+                count=1,
+            )
+        else:
+            resource_cta = resource_html
+        sections.append(
+            '<div class="okf-infobox__section">'
+            f"{resource_cta}</div>"
+        )
+
+    sections.append("</aside>")
+    # If only the shell (title + closing), still emit — empty facts are fine.
+    return "\n".join(sections)
+
+
 def _render_governed_keys(
     concept: Concept, *, mode: str = "serve", root_prefix: str = "",
 ) -> str:
@@ -1859,26 +2160,144 @@ def _render_governed_keys(
                 f'<ol class="okf-citation-list">' + "".join(cit_items) + '</ol></div>'
             )
 
-    # Relations — typed relation chips
-    relations = concept.frontmatter.get("relations")
-    if relations and isinstance(relations, list):
-        rel_parts: list[str] = []
-        for rel in relations:
-            if isinstance(rel, dict):
-                rel_type = _esc(str(rel.get("type", "related")))
-                rel_target = _esc(str(rel.get("target", "")))
-                rel_detail = rel.get("detail", "")
-                detail_html = f' <span class="okf-rel-detail">{_esc(str(rel_detail))}</span>' if rel_detail else ""
-                rel_parts.append(
-                    f'<span class="okf-relation"><span class="okf-rel-type">{rel_type}</span> → {rel_target}{detail_html}</span>'
-                )
-        if rel_parts:
-            parts.append(
-                f'<div class="okf-governed okf-governed--block okf-relations-fm"><span class="okf-governed-label">Relations:</span> '
-                + ", ".join(rel_parts) + "</div>"
-            )
+    # Relations — moved to the right-rail infobox (atlas composition pass).
+    # Keeping them out of the header governed block avoids duplicating the
+    # same typed rows twice on the page.
 
     return "\n".join(parts)
+
+
+def _slug_type(t: str) -> str:
+    """Stable HTML id fragment for a concept-type section."""
+    return re.sub(r"[^a-z0-9]+", "-", (t or "untyped").lower()).strip("-") or "untyped"
+
+
+def _start_here_concepts(
+    concepts: list[Concept],
+    graph,
+    *,
+    limit: int = 4,
+) -> list[Concept]:
+    """Pick orientation entry points for the atlas home.
+
+    Prefer getting-started tags, then tutorials, then how-tos, then hubs by
+    incoming link count. Always returns up to ``limit`` concepts when the
+    bundle is non-empty.
+    """
+    scored: list[tuple[int, Concept]] = []
+    for c in concepts:
+        score = 0
+        tags = {str(t).lower() for t in (c.tags or [])}
+        if tags & {"getting-started", "getting_started", "start-here", "start_here"}:
+            score += 100
+        ctype = (c.type or "").lower()
+        if ctype in {"tutorial", "tutorials"}:
+            score += 50
+        elif ctype in {"how-to", "howto", "how_to"}:
+            score += 20
+        elif ctype in {"demo"}:
+            score += 30
+        if graph is not None:
+            try:
+                score += min(len(graph.backlinks(c.id)), 40)
+            except Exception:  # noqa: BLE001
+                pass
+        scored.append((score, c))
+    scored.sort(key=lambda pair: (-pair[0], pair[1].title.lower(), pair[1].id))
+    picked = [c for s, c in scored if s > 0][:limit]
+    if len(picked) < limit:
+        for _, c in scored:
+            if c not in picked:
+                picked.append(c)
+            if len(picked) >= limit:
+                break
+    return picked
+
+
+def _mini_graph_svg(
+    concepts: list[Concept],
+    graph,
+    palette: dict[str, str],
+    *,
+    mode: str,
+    limit: int = 14,
+) -> str:
+    """Decorative SVG thumbnail of the densest neighbourhood for the atlas home."""
+    if not concepts or graph is None:
+        return ""
+    ranked: list[tuple[int, Concept]] = []
+    for c in concepts:
+        try:
+            deg = len(graph.outlinks(c.id)) + len(graph.backlinks(c.id))
+        except Exception:  # noqa: BLE001
+            deg = 0
+        ranked.append((deg, c))
+    ranked.sort(key=lambda pair: (-pair[0], pair[1].title.lower()))
+    top = [c for _, c in ranked[:limit]]
+    if not top:
+        return ""
+    ids = {c.id for c in top}
+    n = len(top)
+    cx, cy, R = 160, 100, 72
+    positions: dict[ConceptId, tuple[float, float]] = {}
+    for i, c in enumerate(top):
+        ang = (2 * math.pi * i / n) - (math.pi / 2)
+        positions[c.id] = (cx + R * math.cos(ang), cy + R * math.sin(ang))
+    edge_parts: list[str] = []
+    try:
+        for e in graph.edges:
+            if e.source in ids and e.target in ids and e.source != e.target:
+                x1, y1 = positions[e.source]
+                x2, y2 = positions[e.target]
+                edge_parts.append(
+                    f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                    f'stroke="currentColor" stroke-opacity="0.22" stroke-width="1"/>'
+                )
+    except Exception:  # noqa: BLE001
+        pass
+    # Cap edge noise in the thumbnail.
+    edge_parts = edge_parts[:40]
+    node_parts: list[str] = []
+    for c in top:
+        x, y = positions[c.id]
+        color = palette.get(c.type or "", "#94a3b8")
+        try:
+            deg = len(graph.outlinks(c.id)) + len(graph.backlinks(c.id))
+        except Exception:  # noqa: BLE001
+            deg = 0
+        r = 4.5 + min(5.5, deg / 8)
+        url = url_for_concept(c.id, mode)
+        node_parts.append(
+            f'<a href="{_esc(url)}">'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{_esc(color)}">'
+            f'<title>{_esc(c.title)}</title></circle></a>'
+        )
+    return (
+        f'<svg class="okf-mini-graph" viewBox="0 0 320 200" role="img" '
+        f'aria-label="Bundle graph preview" xmlns="http://www.w3.org/2000/svg">'
+        f'<rect width="320" height="200" rx="10" fill="var(--okf-bg-inset)" opacity="0.5"/>'
+        f'{"".join(edge_parts)}{"".join(node_parts)}</svg>'
+    )
+
+
+def _extract_lede_and_about(intro_html: str) -> tuple[str, str]:
+    """Split index intro into a short lede paragraph and the rest (About)."""
+    if not intro_html or not intro_html.strip():
+        return "", ""
+    m = re.search(r"(<p\b[^>]*>.*?</p>)", intro_html, flags=re.IGNORECASE | re.DOTALL)
+    if not m:
+        return intro_html, ""
+    lede = m.group(1)
+    rest = (intro_html[: m.start()] + intro_html[m.end() :]).strip()
+    # Drop a demoted h1 that merely repeats the bundle title.
+    rest = re.sub(
+        r"^<h[1-6]\b[^>]*>.*?</h[1-6]>\s*",
+        "",
+        rest,
+        count=1,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return lede, rest
 
 
 def _render_index_page(
@@ -1926,9 +2345,12 @@ def _render_index_page(
                 # Root index sits at the bundle root: "./" is its root prefix.
                 intro = _relativize_asset_srcs(intro, "./")
 
-    # Hero stat chips (root index only): concepts / types / links, plus a
-    # prominent graph entry point. Fail-soft on graph errors.
+    # Hero + atlas orientation (root index only). Subdir indexes keep a
+    # simpler listing without the orientation band.
     hero_stats = ""
+    orient_html = ""
+    about_html = ""
+    lede_html = ""
     if not sub:
         n_edges = 0
         try:
@@ -1936,13 +2358,31 @@ def _render_index_page(
         except Exception:  # noqa: BLE001 — stats are decorative
             n_edges = 0
         graph_href_stat = "/__graph" if mode in ("serve", "spa") else "__graph.html"
+        lede_html, about_body = _extract_lede_and_about(intro)
+        if about_body:
+            about_html = (
+                f'<details class="okf-about">'
+                f'<summary>About this bundle</summary>'
+                f'<div class="okf-prose">{about_body}</div>'
+                f'</details>'
+            )
+        # Prefer lede over dumping the full intro into the hero.
+        intro_for_hero = lede_html or (
+            f'<p class="okf-hero__lede">{len(bundle.concepts)} concepts across '
+            f'{len(bundle.types())} types.</p>'
+        )
+        # Rewrite intro placeholder usage below via lede.
+        intro = intro_for_hero
         hero_stats = (
+            f'<div class="okf-hero__cta">'
+            f'<a class="okf-hero__graph-link" href="{_esc(graph_href_stat)}">'
+            f'{type_icon_svg("model", size=15, cls="okf-type-icon")} Open the map</a>'
+            f'<a class="okf-hero__start-link" href="#okf-start">Start here</a>'
+            f'</div>'
             f'<div class="okf-hero__stats">'
             f'<span class="okf-stat"><strong>{len(bundle.concepts)}</strong> concepts</span>'
             f'<span class="okf-stat"><strong>{len(bundle.types())}</strong> types</span>'
             f'<span class="okf-stat"><strong>{n_edges}</strong> links</span>'
-            f'<a class="okf-hero__graph-link" href="{_esc(graph_href_stat)}">'
-            f'{type_icon_svg("model", size=15, cls="okf-type-icon")} Explore the graph</a>'
             f'</div>'
         )
 
@@ -1972,6 +2412,63 @@ def _render_index_page(
     except Exception:  # noqa: BLE001 — index must render even if links are broken
         graph = None
 
+    # Atlas orientation rails (root only): Start here / Recent slot / Themes / mini-graph.
+    if not sub and direct:
+        start_items = _start_here_concepts(direct, graph, limit=4)
+        start_rows: list[str] = []
+        for c in start_items:
+            cid_str = concept_id_to_str(c.id)
+            url = url_for_concept(c.id, mode)
+            color = palette.get(c.type or "", "#94a3b8")
+            icon = type_icon_svg(c.type, size=16, cls="okf-type-icon")
+            desc = _esc((c.description or "")[:90] + ("…" if len(c.description or "") > 90 else ""))
+            start_rows.append(
+                f'<a class="okf-orient__row" href="{_esc(url)}" style="--okf-type-accent:{_esc(color)}">'
+                f'<span class="okf-orient__row-icon" style="color:{_esc(color)}" aria-hidden="true">{icon}</span>'
+                f'<span class="okf-orient__row-body">'
+                f'<strong>{_esc(c.title)}</strong>'
+                f'{("<span class=\"okf-muted\">" + desc + "</span>") if desc else ""}'
+                f'</span></a>'
+            )
+        theme_chips: list[str] = []
+        for t in sorted(by_type):
+            color = palette.get(t, "#94a3b8")
+            icon = type_icon_svg(t, size=14, cls="okf-type-icon")
+            slug = _slug_type(t)
+            theme_chips.append(
+                f'<a class="okf-theme-chip" href="#type-{_esc(slug)}" '
+                f'style="--okf-type-accent:{_esc(color)};color:{_esc(color)}">'
+                f'{icon} {_esc(t)}'
+                f'<span class="okf-theme-chip__count">{len(by_type[t])}</span></a>'
+            )
+        mini = _mini_graph_svg(direct, graph, palette, mode=mode)
+        graph_href_orient = "/__graph" if mode in ("serve", "spa") else "__graph.html"
+        mini_block = (
+            f'<a class="okf-orient__map" href="{_esc(graph_href_orient)}" aria-label="Open the graph">'
+            f'{mini or "<span class=\"okf-orient__map-fallback\">Open the map</span>"}'
+            f'</a>'
+        )
+        orient_html = (
+            f'<section class="okf-orient" aria-label="Orient">'
+            f'<div class="okf-orient__col" id="okf-start">'
+            f'<h2 class="okf-orient__title">Start here</h2>'
+            f'{"".join(start_rows) or "<p class=\"okf-muted okf-orient__empty\">No entry points yet.</p>"}'
+            f'</div>'
+            f'<div class="okf-orient__col" id="okf-recent-slot">'
+            f'<h2 class="okf-orient__title">Recently changed</h2>'
+            f'<p class="okf-muted okf-orient__empty">Live updates appear here while the studio runs.</p>'
+            f'</div>'
+            f'<div class="okf-orient__col" id="okf-themes">'
+            f'<h2 class="okf-orient__title">Themes</h2>'
+            f'<div class="okf-theme-chips">{"".join(theme_chips)}</div>'
+            f'</div>'
+            f'<div class="okf-orient__col okf-orient__col--map">'
+            f'<h2 class="okf-orient__title">Map</h2>'
+            f'{mini_block}'
+            f'</div>'
+            f'</section>'
+        )
+
     groups_parts: list[str] = []
     for t in sorted(by_type):
         # iter2 P3-3: add c.id tiebreaker so two concepts with the same
@@ -1980,6 +2477,7 @@ def _render_index_page(
         items = sorted(by_type[t], key=lambda c: (c.title.lower(), c.id))
         color = palette.get(t, "#94a3b8")
         icon = type_icon_svg(t, size=15, cls="okf-type-icon")
+        slug = _slug_type(t)
         rows = []
         for c in items:
             cid_str = concept_id_to_str(c.id)
@@ -2018,12 +2516,27 @@ def _render_index_page(
                 f'</li>'
             )
         groups_parts.append(
-            f'<section class="okf-section" style="--okf-type-accent:{_esc(color)}">'
+            f'<section class="okf-section" id="type-{_esc(slug)}" style="--okf-type-accent:{_esc(color)}">'
             f'<h2 class="okf-section__title"><span class="okf-section__icon" style="color:{_esc(color)}">{icon}</span>'
             f'{_esc(t)} <span class="okf-section__count">{len(items)}</span></h2>'
             f'<ul class="okf-concept-list okf-cardgrid">{"".join(rows)}</ul>'
             f'</section>'
         )
+
+    browse_html = ""
+    if groups_parts and not sub:
+        browse_html = (
+            f'<section class="okf-browse" id="okf-browse">'
+            f'<div class="okf-browse__head">'
+            f'<h2 class="okf-browse__title">Browse all</h2>'
+            f'<p class="okf-muted okf-browse__lede">Every concept, grouped by type.</p>'
+            f'</div>'
+            f'{"".join(groups_parts)}'
+            f'</section>'
+        )
+        groups_for_template = browse_html
+    else:
+        groups_for_template = "\n".join(groups_parts)
 
     # Subdirectory links: any directory strictly deeper than `sub` whose
     # immediate parent is `sub`.
@@ -2111,7 +2624,9 @@ def _render_index_page(
         .replace("__INDEX_TITLE__", _esc(title))
         .replace("__INDEX_INTRO__", intro)
         .replace("__HERO_STATS__", hero_stats)
-        .replace("__GROUPS_HTML__", "\n".join(groups_parts))
+        .replace("__ORIENT_HTML__", orient_html)
+        .replace("__ABOUT_HTML__", about_html)
+        .replace("__GROUPS_HTML__", groups_for_template)
         .replace("__SUBDIRS_HTML__", subdirs_html)
         .replace("__GLOBAL_GRAPH_LINK__", _esc(graph_link))
     )
@@ -2130,43 +2645,130 @@ def _render_search_page(
     static_prefix = "/__static" if mode in ("serve", "spa") else "__static"
     back_link = "/" if mode in ("serve", "spa") else "index.html"
 
-    # Phase 2: results carry the type identity (icon + tinted accent) so a
-    # mixed result list is scannable by kind at a glance.
+    # Phase 2 + atlas search polish: type identity, filter chips, group-by-type,
+    # and empty-state orientation (Start here / recent hubs).
     try:
         palette = resolve_palette(bundle)
     except Exception:  # noqa: BLE001 — results degrade to accentless
         palette = {}
-    result_parts: list[str] = []
+
+    # Enrich results with type when the HTTP path omitted it.
+    enriched: list[dict[str, Any]] = []
     for r in results:
+        row = dict(r)
+        cid = row.get("concept_id") or row.get("id") or ""
+        ctype = row.get("type") or ""
+        if not ctype and cid:
+            try:
+                from .paths import concept_id_from_str as _cid_from_str
+                c = bundle.concepts.get(_cid_from_str(cid))
+                ctype = (c.type or "") if c else ""
+            except Exception:  # noqa: BLE001
+                ctype = ""
+        row["type"] = ctype
+        row["concept_id"] = cid
+        enriched.append(row)
+
+    type_counts: dict[str, int] = {}
+    for row in enriched:
+        t = row.get("type") or "other"
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+    filter_chips = ""
+    if type_counts:
+        chips = [
+            '<button type="button" class="okf-search-filter__chip is-active" data-type="">'
+            f'All <span class="okf-search-filter__n">{len(enriched)}</span></button>'
+        ]
+        for t in sorted(type_counts):
+            color = palette.get(t, "#94a3b8")
+            icon = type_icon_svg(t, size=12, cls="okf-type-icon")
+            chips.append(
+                f'<button type="button" class="okf-search-filter__chip" data-type="{_esc(t)}" '
+                f'style="--okf-type-accent:{_esc(color)};color:{_esc(color)}">'
+                f'{icon} {_esc(t)} <span class="okf-search-filter__n">{type_counts[t]}</span></button>'
+            )
+        filter_chips = (
+            f'<div class="okf-search-filter" role="toolbar" aria-label="Filter by type">'
+            + "".join(chips) + "</div>"
+        )
+
+    def _result_article(r: dict[str, Any]) -> str:
         cid = r.get("concept_id") or r.get("id") or ""
         title = r.get("title") or cid
         desc = r.get("description") or (r.get("snippets") or [""])[0]
         url = ("/" + cid) if mode in ("serve", "spa") else (cid + ".html")
         ctype = r.get("type") or ""
-        if not ctype:
-            try:
-                from .paths import concept_id_from_str as _cid_from_str
-                c = bundle.concepts.get(_cid_from_str(cid)) if cid else None
-                ctype = (c.type or "") if c else ""
-            except Exception:  # noqa: BLE001 — type chip is decorative
-                ctype = ""
         color = palette.get(ctype, "#94a3b8")
         icon = type_icon_svg(ctype, size=14, cls="okf-type-icon")
         type_chip = (
             f'<span class="okf-search-result__type" style="color:{_esc(color)}">'
             f'{icon} {_esc(ctype)}</span>' if ctype else ""
         )
-        result_parts.append(
-            f'<article class="okf-search-result" style="--okf-type-accent:{_esc(color)}">'
+        return (
+            f'<article class="okf-search-result" data-type="{_esc(ctype)}" '
+            f'style="--okf-type-accent:{_esc(color)}">'
             f'<h3><a href="{_esc(url)}" class="okf-internal">{_esc(title)}</a></h3>'
-            # iter1 P3-13: concept-id moved OUT of the <h3> so the heading
-            # outline announces only the title (screen-reader heading-list
-            # navigation no longer reads "title concept/id" as one string).
             f'<div class="okf-search-result__meta okf-muted">{type_chip} {_esc(cid)}</div>'
             f'<div class="okf-search-snippet">{_esc(str(desc)[:200])}</div>'
             f'</article>'
         )
-    results_html = "\n".join(result_parts) or '<p class="okf-search-empty">No results.</p>'
+
+    result_parts: list[str] = []
+    if enriched:
+        # Group by type when there are enough mixed results.
+        by_type: dict[str, list[dict[str, Any]]] = {}
+        for row in enriched:
+            by_type.setdefault(row.get("type") or "other", []).append(row)
+        group = len(enriched) > 6 and len(by_type) > 1
+        if group:
+            for t in sorted(by_type):
+                color = palette.get(t, "#94a3b8")
+                icon = type_icon_svg(t, size=14, cls="okf-type-icon")
+                articles = "".join(_result_article(r) for r in by_type[t])
+                result_parts.append(
+                    f'<section class="okf-search-group" data-type="{_esc(t)}">'
+                    f'<h2 class="okf-search-group__title" style="color:{_esc(color)}">'
+                    f'{icon} {_esc(t)} '
+                    f'<span class="okf-search-group__count">{len(by_type[t])}</span></h2>'
+                    f'{articles}</section>'
+                )
+        else:
+            result_parts.extend(_result_article(r) for r in enriched)
+
+    if result_parts:
+        results_html = filter_chips + "\n".join(result_parts)
+    else:
+        # Empty state: suggest Start here hubs instead of a dead end.
+        try:
+            graph = bundle.graph()
+        except Exception:  # noqa: BLE001
+            graph = None
+        starters = _start_here_concepts(list(bundle.concepts.values()), graph, limit=5)
+        suggest_bits: list[str] = []
+        for c in starters:
+            cid = concept_id_to_str(c.id)
+            url = ("/" + cid) if mode in ("serve", "spa") else (cid + ".html")
+            color = palette.get(c.type or "", "#94a3b8")
+            icon = type_icon_svg(c.type, size=14, cls="okf-type-icon")
+            suggest_bits.append(
+                f'<a class="okf-search-suggest" href="{_esc(url)}" '
+                f'style="--okf-type-accent:{_esc(color)}">'
+                f'<span style="color:{_esc(color)}">{icon}</span> '
+                f'<strong>{_esc(c.title)}</strong>'
+                f'<span class="okf-muted">{_esc(c.type or "")}</span></a>'
+            )
+        suggest_html = (
+            f'<div class="okf-search-empty-recents">'
+            f'<p class="okf-search-empty-recents__label">Start here</p>'
+            f'{"".join(suggest_bits)}</div>'
+            if suggest_bits else ""
+        )
+        results_html = (
+            f'<p class="okf-search-empty">No results'
+            f'{(" for &ldquo;" + _esc(query) + "&rdquo;") if query else ""}.</p>'
+            + suggest_html
+        )
 
     theme_attr = ""
     initial_theme = config.get("theme") or "light"
@@ -2258,6 +2860,7 @@ def _render_graph_page(
     template = load_template("graph_page.html", bundle)
     static_prefix = "/__static" if mode in ("serve", "spa") else "__static"
     data_url = "/__data/graph.json" if mode in ("serve", "spa") else ""
+    discover_url = "/__data/discover.json" if mode in ("serve", "spa") else ""
     graph_data_inline = ""
     if mode == "static":
         payload = graph_data if graph_data is not None else build_graph_data(bundle, name=name)
@@ -2290,6 +2893,7 @@ def _render_graph_page(
     # okf-loom:bodyPatched after each showDetail() so renderers.js re-scans.
     graph_js = (
         f'<script src="{static_prefix}/graph.js" defer></script>\n'
+        f'<script src="{static_prefix}/flow-atlas.js" defer></script>\n'
         f'<script src="{static_prefix}/renderers.js" defer></script>'
     )
 
@@ -2298,7 +2902,7 @@ def _render_graph_page(
         .replace("__LANG__", "en")
         .replace("__THEME_ATTR__", theme_attr)
         .replace("__DATA_ATTRS__", data_attrs)
-        .replace("__HEAD_TITLE__", _esc(f"Graph — {name}"))
+        .replace("__HEAD_TITLE__", _esc(f"Flow Atlas — {name}"))
         .replace("__BUNDLE_NAME__", _esc(name))
         .replace("__STATIC_PREFIX__", static_prefix)
         .replace("__WIKI_CSS_LINK__", css_link)
@@ -2309,6 +2913,7 @@ def _render_graph_page(
         .replace("__INITIAL_THEME_BUTTON__", _theme_button_html(initial_theme))
         .replace("__INITIAL_LAYOUT__", initial_layout)
         .replace("__GRAPH_DATA_URL__", data_url)
+        .replace("__DISCOVER_DATA_URL__", discover_url)
         .replace("__GRAPH_DATA_INLINE__", graph_data_inline)
         .replace("__BACK_LINK__", back_link)
     )

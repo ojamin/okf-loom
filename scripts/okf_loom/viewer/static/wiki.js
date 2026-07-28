@@ -432,16 +432,41 @@
     });
   }
 
+  // Atlas search polish: type filter chips on the search page.
+  function bindSearchFilters() {
+    var toolbar = document.querySelector(".okf-search-filter");
+    if (!toolbar) return;
+    var chips = toolbar.querySelectorAll(".okf-search-filter__chip");
+    var results = document.querySelectorAll(".okf-search-result");
+    var groups = document.querySelectorAll(".okf-search-group");
+    chips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        var ty = chip.getAttribute("data-type") || "";
+        chips.forEach(function (c) { c.classList.toggle("is-active", c === chip); });
+        results.forEach(function (r) {
+          var match = !ty || r.getAttribute("data-type") === ty;
+          r.hidden = !match;
+        });
+        groups.forEach(function (g) {
+          if (!ty) { g.hidden = false; return; }
+          g.hidden = g.getAttribute("data-type") !== ty;
+        });
+      });
+    });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       bindLinkHovers();
       renderLocalGraph();
       bindHeadingAnchors();
+      bindSearchFilters();
     });
   } else {
     bindLinkHovers();
     renderLocalGraph();
     bindHeadingAnchors();
+    bindSearchFilters();
   }
   // Re-apply after live SSE body patches (studio dispatches this event).
   window.addEventListener("okf-loom:bodyPatched", bindHeadingAnchors);
