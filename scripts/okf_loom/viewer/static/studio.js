@@ -260,13 +260,17 @@
   })();
 
   // ====================================================================
-  // 3. Studio bar
+  // 3. Studio chrome (inline in the sticky topbar — one bar, quiet defaults)
   // ====================================================================
-  const bar = el("div", { class: "okf-studio-bar", role: "region", "aria-label": "Studio controls" });
+  // Atlas composition pass: the old dual chrome (topbar + sibling studio bar)
+  // is gone. Studio controls mount INTO `.okf-topbar` as an inline cluster so
+  // every page pays one ~52px sticky tax. Presence collapses into a drawer;
+  // Comments/Changes only shout when counts are non-zero.
+  const bar = el("div", { class: "okf-studio-bar okf-studio-bar--inline", role: "toolbar", "aria-label": "Studio controls" });
   const leftGroup = el("div", { class: "okf-studio-bar__group" });
   const rightGroup = el("div", { class: "okf-studio-bar__group okf-studio-bar__group--right" });
 
-  // Presence chip
+  // Presence chip (compact; full label lives in the drawer).
   const presenceDot = el("span", { class: "okf-presence__dot", "aria-hidden": "true" });
   const presenceLabel = el("span", { class: "okf-presence__label" });
   presenceLabel.appendChild(el("span", { class: "okf-presence__actor", text: "Agent" }));
@@ -274,27 +278,12 @@
   const presenceChip = el("span", { class: "okf-presence", "data-state": "idle", role: "status",
     "aria-live": "polite", "aria-label": "Agent presence: idle" },
     [presenceDot, presenceLabel]);
-  leftGroup.appendChild(presenceChip);
 
-  // iter2 G11 (§3 watch question): an "Agent watching" switch in the studio
-  // bar. The user can toggle whether the agent proactively watches + enriches
-  // the bundle any time (§3 step 3/4). Toggling on POSTs /__presence
-  // {actor:"agent", state:"watching"}; off POSTs {state:"idle"}. It also
-  // reflects the agent's live presence (renderPresence syncs aria-pressed),
-  // so if the agent starts/stops watching via the CLI the switch follows.
-  // Visible label "Watching" + an eye glyph + an accessible name.
+  // Watching toggle (lives in the presence drawer).
   const watchingToggle = el("button", {
     type: "button",
     class: "okf-studiobtn okf-watch-toggle",
     "aria-pressed": "false",
-    // iter3 CRI3-010: was a 14-word sentence ("Agent watching. Toggle
-    // whether the agent proactively watches and enriches the bundle.").
-    // aria-label replaces the visible text for AT users on every focus,
-    // so it must be CONCISE (identity + state), not explanatory. The
-    // explanation already lives in `title` (tooltip on hover/focus) and
-    // the visible "Watching" label supplies context. The label is
-    // re-rendered with the live state by renderPresence, so this initial
-    // value is overwritten on first presence echo.
     "aria-label": "Agent watching, currently off",
     title: "Toggle proactive agent watching (§3)",
   });
@@ -303,28 +292,75 @@
   watchingToggle.addEventListener("click", () => {
     const nowOn = watchingToggle.getAttribute("aria-pressed") !== "true";
     watchingToggle.setAttribute("aria-pressed", nowOn ? "true" : "false");
-    // Fire-and-forget; the presence SSE echoes back and renderPresence
-    // re-asserts the canonical state (so a failed POST rolls the toggle back).
     tokenFetch("/__presence", {
       method: "POST",
       body: { actor: "agent", state: nowOn ? "watching" : "idle" },
     }).catch(() => {
-      // On network failure, revert the optimistic toggle.
       watchingToggle.setAttribute("aria-pressed", nowOn ? "false" : "true");
       toast("Could not update agent watching state.", { tone: "error" });
     });
   });
-  leftGroup.appendChild(watchingToggle);
 
-  // Connection indicator (driven by live.js hub). iter1 CRI-015: aria-live
-  // so "Reconnecting…" / "Live" / "Offline" state changes are announced to
-  // assistive tech (presence + toasts already were; the conn chip was the
-  // odd one out).
+  // Connection indicator (driven by live.js hub).
   const connDot = el("span", { class: "okf-conn__dot", "aria-hidden": "true" });
   const connLabel = el("span", { text: "Live" });
   const connChip = el("span", { class: "okf-conn", "data-state": "online",
     title: "Live updates connection", role: "status", "aria-live": "polite",
     "aria-label": "Live updates connection: online" }, [connDot, connLabel]);
+
+  // Presence drawer: one quiet control that expands to watching / live / activity.
+  const presenceMenu = el("div", { class: "okf-presence-menu" });
+  const presenceBtn = el("button", {
+    type: "button",
+    class: "okf-studiobtn okf-presence-menu__btn",
+    "aria-expanded": "false",
+    "aria-haspopup": "true",
+    "aria-controls": "okf-presence-drawer",
+    title: "Agent presence and studio status",
+  });
+  const presenceBtnDot = el("span", { class: "okf-presence__dot", "aria-hidden": "true" });
+  const presenceBtnText = el("span", { class: "okf-presence-menu__btn-label", text: "Agent" });
+  presenceBtn.appendChild(presenceBtnDot);
+  presenceBtn.appendChild(presenceBtnText);
+  const presenceDrawer = el("div", {
+    class: "okf-presence-menu__drawer",
+    id: "okf-presence-drawer",
+    hidden: "hidden",
+    role: "region",
+    "aria-label": "Agent presence",
+  });
+  presenceDrawer.appendChild(presenceChip);
+  presenceDrawer.appendChild(watchingToggle);
+  presenceDrawer.appendChild(connChip);
+  presenceMenu.appendChild(presenceBtn);
+  presenceMenu.appendChild(presenceDrawer);
+  function setPresenceDrawer(open) {
+    presenceBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) presenceDrawer.removeAttribute("hidden");
+    else presenceDrawer.setAttribute("hidden", "hidden");
+  }
+  presenceBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setPresenceDrawer(presenceBtn.getAttribute("aria-expanded") !== "true");
+  });
+  document.addEventListener("click", (e) => {
+    if (!presenceMenu.contains(e.target)) setPresenceDrawer(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setPresenceDrawer(false);
+  });
+  // Keep the compact button's dot in sync with the presence chip.
+  const _presenceObs = new MutationObserver(() => {
+    presenceBtnDot.style.background = getComputedStyle(presenceDot).backgroundColor;
+    const st = presenceChip.getAttribute("data-state") || "idle";
+    presenceBtn.setAttribute("data-state", st);
+    presenceBtn.setAttribute("aria-label", "Agent presence: " + st);
+    const actor = $(".okf-presence__actor", presenceLabel);
+    presenceBtnText.textContent = (actor && actor.textContent) || "Agent";
+  });
+  try { _presenceObs.observe(presenceChip, { attributes: true, subtree: true, childList: true, characterData: true }); } catch (e) {}
+
+  leftGroup.appendChild(presenceMenu);
 
   // View-mode switch (concept pages only)
   const viewSwitch = el("div", { class: "okf-viewswitch", role: "group", "aria-label": "View mode" });
@@ -342,23 +378,19 @@
   };
   Object.keys(viewBtns).forEach((k) => viewSwitch.appendChild(viewBtns[k]));
 
-  // Panel toggle buttons (right group)
-  const commentsBtn = el("button", { type: "button", class: "okf-studiobtn", "aria-expanded": "false",
-    "aria-controls": "okf-panel", text: "Comments" });
-  const commentsBadge = el("span", { class: "okf-badge", "aria-hidden": "true", text: "0" });
+  // Panel toggle buttons — quiet until there is something to see.
+  const commentsBtn = el("button", { type: "button", class: "okf-studiobtn okf-studiobtn--count",
+    "aria-expanded": "false", "aria-controls": "okf-panel", "data-count": "0", text: "Comments" });
+  const commentsBadge = el("span", { class: "okf-badge", "aria-hidden": "true", "data-count": "0", text: "0" });
   commentsBtn.insertBefore(commentsBadge, commentsBtn.firstChild);
   commentsBtn.addEventListener("click", () => togglePanel("comments"));
 
-  const changesBtn = el("button", { type: "button", class: "okf-studiobtn", "aria-expanded": "false",
-    "aria-controls": "okf-panel", text: "Changes" });
-  const changesBadge = el("span", { class: "okf-badge", "aria-hidden": "true", text: "0" });
+  const changesBtn = el("button", { type: "button", class: "okf-studiobtn okf-studiobtn--count",
+    "aria-expanded": "false", "aria-controls": "okf-panel", "data-count": "0", text: "Changes" });
+  const changesBadge = el("span", { class: "okf-badge", "aria-hidden": "true", "data-count": "0", text: "0" });
   changesBtn.insertBefore(changesBadge, changesBtn.firstChild);
   changesBtn.addEventListener("click", () => togglePanel("changes"));
 
-  // User feedback: the palette trigger used to be a bare "⌘K"
-  // glyph — meaningless on the ~90% of machines without a command key.
-  // It now says what it does ("Commands") with a platform-correct
-  // shortcut hint (⌘K on Apple devices, Ctrl+K everywhere else).
   const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(
     (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
   const paletteHint = isApplePlatform ? "⌘K" : "Ctrl+K";
@@ -369,23 +401,36 @@
      el("kbd", { class: "okf-kbd", "aria-hidden": "true", text: paletteHint })]);
   paletteBtn.addEventListener("click", openPalette);
 
-  // Assemble bar (view switch only on concept pages)
   rightGroup.appendChild(commentsBtn);
   rightGroup.appendChild(changesBtn);
   rightGroup.appendChild(paletteBtn);
-  rightGroup.appendChild(connChip);
   bar.appendChild(leftGroup);
   bar.appendChild(rightGroup);
 
   function mountBar() {
     const topbar = $(".okf-topbar");
-    if (topbar && topbar.parentNode) {
+    const controls = topbar && $(".okf-topbar__controls", topbar);
+    if (controls) {
+      // Prefer mounting inside the sticky topbar so chrome is one row.
+      // Place studio cluster after Graph/Index/theme (end of controls).
+      controls.appendChild(bar);
+      topbar.classList.add("okf-topbar--studio");
+    } else if (topbar && topbar.parentNode) {
       topbar.parentNode.insertBefore(bar, topbar.nextSibling);
+      bar.classList.remove("okf-studio-bar--inline");
     } else {
       document.body.insertBefore(bar, document.body.firstChild);
+      bar.classList.remove("okf-studio-bar--inline");
     }
     if (isConceptPage()) {
       leftGroup.appendChild(viewSwitch);
+    }
+    // Hero-ise the search field when present.
+    const searchInput = topbar && topbar.querySelector('input[type="search"]');
+    if (searchInput && !searchInput.getAttribute("placeholder")) {
+      searchInput.setAttribute("placeholder", "Search the atlas\u2026");
+    } else if (searchInput && /Search/i.test(searchInput.getAttribute("placeholder") || "")) {
+      searchInput.setAttribute("placeholder", "Search the atlas\u2026");
     }
   }
 
@@ -2406,15 +2451,13 @@
         if (meta) meta.appendChild(chip);
         else li.appendChild(el("span", { class: "okf-card__meta" }, [chip]));
       }
-      chip.textContent = "💬 " + counts[id];
-      chip.title = counts[id] + " comment" + (counts[id] === 1 ? "" : "s");
+      chip.textContent = counts[id] + " comment" + (counts[id] === 1 ? "" : "s");
+      chip.title = chip.textContent;
     });
-    // 2) Recently-changed rail in the hero (top 5 concepts by latest
-    // structural event, newest first).
-    const hero = $(".okf-hero");
-    if (!hero || !Array.isArray(state.events) || !state.events.length) return;
+    // 2) Recently-changed rail — prefer the atlas orientation slot, fall
+    // back to appending under the hero (legacy indexes without orientation).
     const latest = {};
-    state.events.forEach((ev) => {
+    (state.events || []).forEach((ev) => {
       if (!ev || !ev.ts) return;
       if (ev.type !== "changed" && ev.type !== "created" && ev.type !== "removed" && ev.type !== "activity") return;
       (ev.ids || []).forEach((id) => {
@@ -2424,18 +2467,28 @@
     const ranked = Object.keys(latest)
       .sort((a, b) => (latest[a].ts < latest[b].ts ? 1 : -1))
       .slice(0, 5);
+    const slot = $("#okf-recent-slot");
+    const hero = $(".okf-hero");
     if (!ranked.length) return;
     let rail = $("#okf-recent-rail");
     if (rail) rail.remove();
     rail = el("div", { class: "okf-recent", id: "okf-recent-rail" });
-    rail.appendChild(el("span", { class: "okf-recent__label", text: "Recently changed" }));
+    if (!slot) {
+      rail.appendChild(el("span", { class: "okf-recent__label", text: "Recently changed" }));
+    }
     ranked.forEach((id) => {
       const a = el("a", { class: "okf-recent__item", href: "/" + id });
       a.appendChild(el("strong", { text: titleOf[id] || id }));
       a.appendChild(document.createTextNode(" · " + fmtAgo(latest[id].ts)));
       rail.appendChild(a);
     });
-    hero.appendChild(rail);
+    if (slot) {
+      const placeholder = $(".okf-orient__empty", slot);
+      if (placeholder) placeholder.remove();
+      slot.appendChild(rail);
+    } else if (hero) {
+      hero.appendChild(rail);
+    }
   }
 
   function hrefToConceptId(href) {
@@ -3342,9 +3395,15 @@
   function updateBadges() {
     const open = state.comments.filter((c) => c.state === "open" || c.state === "claimed").length;
     commentsBadge.textContent = String(open);
+    commentsBadge.setAttribute("data-count", String(open));
     commentsBadge.setAttribute("aria-label", open + " open comments");
+    commentsBtn.setAttribute("data-count", String(open));
+    commentsBtn.classList.toggle("okf-studiobtn--quiet", open === 0 && state.openPanel !== "comments");
     const acts = state.events.filter((e) => e.type === "activity" || e.action).length;
     changesBadge.textContent = String(acts);
+    changesBadge.setAttribute("data-count", String(acts));
+    changesBtn.setAttribute("data-count", String(acts));
+    changesBtn.classList.toggle("okf-studiobtn--quiet", acts === 0 && state.openPanel !== "changes");
   }
 
   function jumpToActivity(aid) {
@@ -3921,20 +3980,25 @@
     conflictState._retryArgs = null;
   }
 
-  // ---- sidebar panel system (user-requested: collapsible, reorderable, resizable) ----
+  // ---- sidebar panel system (atlas composition: Related + Sections only;
+  // Quick Actions demoted to a single Ask-agent entry under the TOC) ----
   var SIDEBAR_KEY = "okf:sidebar";
-  var SIDEBAR_PANELS = ["related", "sections", "intents"];
+  var SIDEBAR_PANELS = ["related", "sections"];
   var INTENTS = [
+    { id: "ask-agent", label: "Ask agent\u2026", prompt: "" },
     { id: "add-section", label: "Add section", prompt: "Add a new section about" },
-    { id: "split-doc", label: "Split document", prompt: "Split this document into" },
     { id: "add-links", label: "Add links", prompt: "Add links from this concept to" },
-    { id: "enrich", label: "Enrich content", prompt: "Enrich this page with" },
   ];
 
   function getSidebarState() {
     try {
       var s = JSON.parse(localStorage.getItem(SIDEBAR_KEY) || "{}");
       if (!s.order || !Array.isArray(s.order)) s.order = SIDEBAR_PANELS.slice();
+      // Drop legacy "intents" panel from saved orders (demoted to Ask agent).
+      s.order = s.order.filter(function (id) { return id === "related" || id === "sections"; });
+      SIDEBAR_PANELS.forEach(function (id) {
+        if (s.order.indexOf(id) < 0) s.order.push(id);
+      });
       if (!s.collapsed) s.collapsed = {};
       if (!s.width) s.width = 260;
       return s;
@@ -3948,26 +4012,34 @@
     var sidebar = $(".okf-page__sidebar");
     if (!sidebar) return;
     var sbState = getSidebarState();
-    // Apply saved width.
     document.documentElement.style.setProperty("--okf-sidebar-w", sbState.width + "px");
 
-    // Capture the existing local graph node (preserve event listeners
-    // by moving the actual node, not copying HTML).
     var existingGraph = $(".okf-local-graph", sidebar);
 
-    // Clear sidebar.
     sidebar.innerHTML = "";
 
-    // Build panels in saved order.
     sbState.order.forEach(function (panelId) {
       var panel = buildPanel(panelId, sbState, existingGraph);
       if (panel) sidebar.appendChild(panel);
     });
 
-    // Wire drag-and-drop reordering.
+    // Demoted Ask-agent entry (replaces the equal-weight Quick Actions panel).
+    var askWrap = el("div", { class: "okf-sidebar-ask" });
+    var askBtn = el("button", {
+      type: "button",
+      class: "okf-sidebar-ask__btn",
+      text: "Ask agent\u2026",
+      title: "Open the comment composer to direct the agent",
+    });
+    askBtn.addEventListener("click", function () {
+      state.draftBody = "";
+      state.draftAnchor = { kind: "concept", ref: state.conceptId, concept: state.conceptId };
+      openPanel("comments", { focusComposer: true });
+    });
+    askWrap.appendChild(askBtn);
+    sidebar.appendChild(askWrap);
+
     wireSidebarDnD(sidebar, sbState);
-    // Re-render the local graph pills inside the new panel location so
-    // wiki.js's click handlers (navigation) are properly bound.
     if (window.okfWiki && window.okfWiki.renderLocalGraph) {
       try { window.okfWiki.renderLocalGraph(); } catch (e) {}
     }
@@ -4000,20 +4072,16 @@
 
     var body = el("div", { class: "okf-sidebar-panel__body" });
     if (panelId === "related") {
-      // Move the actual DOM node to preserve event listeners on the
-      // local graph pills (buttons that navigate to concepts).
       if (existingGraph) body.appendChild(existingGraph);
     } else if (panelId === "sections") {
       buildSectionsPanel(body);
-    } else if (panelId === "intents") {
-      buildIntentsPanel(body);
     }
     panel.appendChild(body);
     return panel;
   }
 
   function sidebarPanelTitle(id) {
-    return ({ related: "Related", sections: "Sections", intents: "Quick Actions" })[id] || id;
+    return ({ related: "Neighborhood", sections: "On this page" })[id] || id;
   }
 
   function buildSectionsPanel(body) {
@@ -4073,12 +4141,13 @@
   }
 
   function buildIntentsPanel(body) {
+    // Legacy helper kept for any extension that still calls it; the default
+    // sidebar no longer mounts an intents panel.
     var container = el("div", { class: "okf-sidebar-intents" });
     INTENTS.forEach(function (intent) {
       var btn = el("button", { class: "okf-sidebar-intent", type: "button", text: intent.label });
       btn.addEventListener("click", function () {
-        // Pre-fill the comment composer with the intent prompt.
-        state.draftBody = intent.prompt + " ";
+        state.draftBody = (intent.prompt ? intent.prompt + " " : "");
         state.draftAnchor = { kind: "concept", ref: state.conceptId, concept: state.conceptId };
         openPanel("comments", { focusComposer: true });
       });

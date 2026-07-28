@@ -762,6 +762,9 @@
       // label), not node fills; edge labels are shown contextually to cut
       // clutter (reviewer blockers 6/8).
       relationEdges: false, showEdgeLabels: false,
+      // Atlas calm default: hide weak untyped edges on Map unless the user
+      // opts into full density.
+      showAllEdges: false,
       // Phase 4: legend-chip type filter (type name → true when hidden).
       hiddenTypes: {},
       search: "", type: ""
@@ -1077,12 +1080,17 @@
         { selector: "edge.okf-reld-1", style: { "line-style": "dashed", "line-dash-pattern": [6, 3] } },
         { selector: "edge.okf-reld-2", style: { "line-style": "dashed", "line-dash-pattern": [2, 3] } },
         { selector: "edge.okf-reld-3", style: { "line-style": "dashed", "line-dash-pattern": [10, 3, 2, 3] } },
+        // Atlas calm default: weak untyped edges stay off the Map until the
+        // user asks for density (Advanced → Show all edges / Relations).
+        { selector: "edge.okf-edge-calm-hide", style: { "display": "none" } },
         // Phase 3: degree-zero concepts read as "not yet linked" — dashed
         // outline + reduced opacity (fcose tiles them into a tray).
         { selector: "node.okf-orphan", style: {
             "border-style": "dashed",
-            "border-width": 2,
-            "opacity": 0.75,
+            "border-width": 2.5,
+            "border-color": GRAPH_COLORS.light.edge,
+            "opacity": 0.7,
+            "background-opacity": 0.85,
         } },
         // Phase 4 hover states: the pointed node's neighborhood stays at
         // full opacity while everything else fades; the node itself gets a
@@ -1578,6 +1586,16 @@
             if (!keep && (e.data("weight") || 0) < thresh) dim = true;
           }
           e.toggleClass("dim", dim);
+          // Calm Map: hide weak untyped edges (progressive disclosure).
+          var calmHide = false;
+          if (!controlState.showAllEdges && !controlState.relationEdges &&
+              (controlState.lens === "map" || controlState.lens === "themes" ||
+               controlState.lens === "bridges" || controlState.lens === "recent")) {
+            var lab = e.data("label");
+            var w = e.data("weight") || 0;
+            if (!lab && w < 0.42) calmHide = true;
+          }
+          e.toggleClass("okf-edge-calm-hide", calmHide && !dim);
         });
         // Focus root halo: unmistakable marker on the focused node so Focus
         // never looks like Relations (reviewer blocker 4).
@@ -1587,6 +1605,7 @@
           if (fr && fr.length) fr.addClass("okf-focus-root");
         }
       });
+      updateOrphanShelf();
     }
 
     // Debounced, stale-safe layout rerun. The latest control values always
@@ -2381,7 +2400,11 @@
       });
       ui.relLabels = checkRow(vfs, "Show relationship labels", controlState.showEdgeLabels, function (c) {
         controlState.showEdgeLabels = c; controlState.relationEdges = c;
-        markCustom(); applyVisualEncoding(); applyEdgeLabels(); updateStatus();
+        markCustom(); applyVisualEncoding(); applyEdgeLabels(); applyFilters(); updateStatus();
+      });
+      ui.allEdges = checkRow(vfs, "Show all edges", controlState.showAllEdges, function (c) {
+        controlState.showAllEdges = c;
+        markCustom(); applyFilters(); updateStatus();
       });
       // Saket et al. 2014: group colouring aids cluster tasks but costs
       // ~25% accuracy on plain topology tasks — so the evidence says make
@@ -2569,8 +2592,40 @@
 
     // ---- Phase 4: path tracing (shift-click) ----------------------------
     // Select node A, shift-click node B → the shortest chain lights up and
-    // the status line reads it out ("Orders —derived_from→ Subscriptions").
+    // a path chip reads it out ("Orders → derived_from → Subscriptions").
     var pathEles = null;
+    var pathChipEl = null;
+    function ensurePathChip() {
+      if (pathChipEl) return pathChipEl;
+      pathChipEl = document.createElement("div");
+      pathChipEl.className = "okf-path-chip";
+      pathChipEl.setAttribute("role", "status");
+      pathChipEl.setAttribute("aria-live", "polite");
+      pathChipEl.hidden = true;
+      var label = document.createElement("span");
+      label.className = "okf-path-chip__label";
+      var clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "okf-path-chip__clear";
+      clear.setAttribute("aria-label", "Clear path");
+      clear.textContent = "×";
+      clear.addEventListener("click", function () { clearPath(); updateStatus(); });
+      pathChipEl.appendChild(label);
+      pathChipEl.appendChild(clear);
+      container.appendChild(pathChipEl);
+      return pathChipEl;
+    }
+    function setPathChip(text) {
+      var chip = ensurePathChip();
+      var lab = chip.querySelector(".okf-path-chip__label");
+      if (text) {
+        lab.textContent = text;
+        chip.hidden = false;
+      } else {
+        lab.textContent = "";
+        chip.hidden = true;
+      }
+    }
     function setStatusNote(msg) {
       if (!statusEl) return;
       if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
@@ -2579,6 +2634,7 @@
     function clearPath() {
       if (pathEles) { pathEles.removeClass("okf-path"); pathEles = null; }
       cy.elements().removeClass("okf-path-dim");
+      setPathChip("");
     }
     function showPathBetween(a, b) {
       clearPath();
@@ -2586,17 +2642,61 @@
       if (!res || !res.found) res = cy.elements().aStar({ root: a, goal: b, directed: false });
       if (!res || !res.found) {
         setStatusNote("No path between “" + a.data("label") + "” and “" + b.data("label") + "”.");
+        setPathChip("No path found");
         return;
       }
       pathEles = res.path;
       cy.elements().not(res.path).addClass("okf-path-dim");
       res.path.addClass("okf-path");
       var chain = [];
+      var chipParts = [];
       res.path.forEach(function (ele) {
-        if (ele.isNode()) chain.push(ele.data("label") || ele.id());
-        else chain.push(ele.data("label") ? "—" + ele.data("label") + "→" : "→");
+        if (ele.isNode()) {
+          chain.push(ele.data("label") || ele.id());
+          chipParts.push(ele.data("label") || ele.id());
+        } else {
+          var elab = ele.data("label");
+          chain.push(elab ? "—" + elab + "→" : "→");
+          chipParts.push(elab ? "→ " + elab + " →" : "→");
+        }
       });
       setStatusNote("Path: " + chain.join(" "));
+      setPathChip(chipParts.join(" "));
+    }
+
+    // Orphan shelf — labelled tray of unlinked concepts at the canvas bottom.
+    var orphanShelfEl = null;
+    function updateOrphanShelf() {
+      if (!orphanShelfEl) {
+        orphanShelfEl = document.createElement("div");
+        orphanShelfEl.className = "okf-orphan-shelf";
+        orphanShelfEl.setAttribute("aria-label", "Not yet linked concepts");
+        container.appendChild(orphanShelfEl);
+      }
+      var orphans = cy.nodes().filter(function (n) {
+        return n.degree(false) === 0 && !n.hasClass("dim");
+      });
+      orphanShelfEl.innerHTML = "";
+      if (!orphans.length) {
+        orphanShelfEl.hidden = true;
+        return;
+      }
+      orphanShelfEl.hidden = false;
+      var title = document.createElement("div");
+      title.className = "okf-orphan-shelf__title";
+      title.textContent = "Not yet linked — " + orphans.length;
+      orphanShelfEl.appendChild(title);
+      var list = document.createElement("div");
+      list.className = "okf-orphan-shelf__list";
+      orphans.forEach(function (n) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "okf-orphan-shelf__item";
+        b.textContent = n.data("label") || n.id();
+        b.addEventListener("click", function () { showDetail(n.id()); });
+        list.appendChild(b);
+      });
+      orphanShelfEl.appendChild(list);
     }
 
     // ---- Phase 4: keyboard ----------------------------------------------

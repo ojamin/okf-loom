@@ -4,7 +4,11 @@ Assessment date: 2026-07-27, against the live studio on `docs-bundle`
 plus checked-in media (`docs/media/*`) and the prior plans in
 [`ui-overhaul-plan.md`](ui-overhaul-plan.md) / [`graph-lenses.md`](graph-lenses.md).
 
-Mockups (aspirational, not shipped):
+> **Status (2026-07-28):** Implemented on branch `cursor/atlas-composition-pass-84ca`
+> — chrome merge (A), atlas home (B), concept infobox anatomy (C), graph calm
+> default + orphan shelf + path chip (D), search filters / empty-state (E).
+
+Mockups (aspirational references that guided the ship):
 
 | # | Surface | File |
 |---|---|---|

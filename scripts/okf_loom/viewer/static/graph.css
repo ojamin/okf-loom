@@ -13,6 +13,91 @@
   position: relative;
 }
 
+/* Path chip — shift-click path readout pinned to the canvas. */
+.okf-path-chip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(640px, calc(100% - 24px));
+  padding: 6px 10px 6px 12px;
+  background: var(--okf-bg-elev);
+  border: 1px solid var(--okf-accent);
+  border-radius: var(--okf-radius-pill);
+  box-shadow: var(--okf-shadow);
+  font-size: var(--okf-text-sm);
+  color: var(--okf-fg);
+}
+.okf-path-chip[hidden] { display: none !important; }
+.okf-path-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.okf-path-chip__clear {
+  font: inherit;
+  border: none;
+  background: transparent;
+  color: var(--okf-fg-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  font-size: 1.1rem;
+}
+.okf-path-chip__clear:hover { color: var(--okf-accent); }
+
+/* Orphan shelf — not-yet-linked concepts as a bottom tray. */
+.okf-orphan-shelf {
+  position: absolute;
+  left: 10px;
+  right: 72px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 88px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--okf-bg-elev) 92%, transparent);
+  border: 1px dashed var(--okf-border-strong);
+  border-radius: var(--okf-radius);
+  box-shadow: var(--okf-shadow);
+  backdrop-filter: blur(4px);
+}
+.okf-orphan-shelf[hidden] { display: none !important; }
+.okf-orphan-shelf__title {
+  font-size: var(--okf-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--okf-fg-muted);
+}
+.okf-orphan-shelf__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow: auto;
+}
+.okf-orphan-shelf__item {
+  font: inherit;
+  font-size: var(--okf-text-xs);
+  padding: 2px 8px;
+  border: 1px solid var(--okf-border);
+  border-radius: var(--okf-radius-pill);
+  background: var(--okf-bg-inset);
+  color: var(--okf-fg-muted);
+  cursor: pointer;
+}
+.okf-orphan-shelf__item:hover {
+  border-color: var(--okf-accent);
+  color: var(--okf-accent);
+}
+
 /* Legend overlay showing type → colour */
 .okf-graph-legend {
   position: absolute;

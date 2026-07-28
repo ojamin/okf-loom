@@ -455,6 +455,11 @@ hr { border: 0; border-top: 1px solid var(--okf-border); margin: var(--okf-space
   z-index: 10;
   flex-shrink: 0;
 }
+.okf-topbar--studio .okf-topbar__controls {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
 .okf-topbar__brand { display: flex; align-items: baseline; gap: var(--okf-space-2); min-width: 0; }
 .okf-topbar__brand strong { font-size: var(--okf-text-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .okf-brand-link { color: inherit; }
@@ -477,14 +482,26 @@ hr { border: 0; border-top: 1px solid var(--okf-border); margin: var(--okf-space
   background: var(--okf-bg-elev);
   color: var(--okf-fg);
 }
-.okf-topbar__controls input[type="search"] { min-width: 200px; }
+.okf-topbar__controls input[type="search"] {
+  min-width: 160px;
+  flex: 1 1 280px;
+  max-width: 36rem;
+  background: var(--okf-bg-inset);
+}
 .okf-topbar__controls button, .okf-btn {
   cursor: pointer;
   background: var(--okf-bg-inset);
   transition: background 0.12s ease;
 }
 .okf-topbar__controls button:hover, .okf-btn:hover { background: var(--okf-border); }
-.okf-search-form { display: contents; }
+/* Search is the hero control: form grows; Graph/Index stay compact. */
+.okf-search-form {
+  display: flex;
+  flex: 1 1 280px;
+  max-width: 36rem;
+  min-width: 0;
+}
+.okf-search-form input[type="search"] { width: 100%; }
 /* P2-65: static-build search notice. */
 .okf-search-note {
   font-size: var(--okf-text-xs);
@@ -1046,6 +1063,36 @@ sup.okf-footnote-ref { line-height: 0; }
   padding-bottom: var(--okf-space-5);
   border-bottom: 1px solid var(--okf-border);
 }
+.okf-hero--atlas {
+  display: grid;
+  gap: var(--okf-space-3);
+  padding: var(--okf-space-6) var(--okf-space-5);
+  margin: 0 0 var(--okf-space-5);
+  border: 1px solid var(--okf-border);
+  border-radius: var(--okf-radius);
+  background:
+    radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--okf-accent) 12%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--okf-bg-elev), var(--okf-bg));
+  border-bottom: 1px solid var(--okf-border);
+}
+.okf-hero--atlas .okf-index__title {
+  margin: 0;
+  max-width: 22ch;
+}
+.okf-hero__lede-wrap,
+.okf-hero__lede-wrap p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--okf-fg-muted);
+  font-size: var(--okf-text-md);
+  line-height: 1.45;
+}
+.okf-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--okf-space-2);
+}
 .okf-hero__stats {
   display: flex;
   flex-wrap: wrap;
@@ -1065,17 +1112,133 @@ sup.okf-footnote-ref { line-height: 0; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
-  padding: 6px 14px;
+  padding: 8px 16px;
   background: var(--okf-accent);
   color: var(--okf-accent-on);
   border-radius: var(--okf-radius-pill);
   font-size: var(--okf-text-sm);
   font-weight: 600;
   text-decoration: none;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
-.okf-hero__graph-link:hover { background: var(--okf-accent-hover); text-decoration: none; }
+.okf-hero__graph-link:hover { background: var(--okf-accent-hover); text-decoration: none; transform: translateY(-1px); }
+.okf-hero__start-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid var(--okf-border-strong);
+  border-radius: var(--okf-radius-pill);
+  color: var(--okf-fg);
+  font-size: var(--okf-text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--okf-bg-elev);
+}
+.okf-hero__start-link:hover { border-color: var(--okf-accent); color: var(--okf-accent); text-decoration: none; }
+
+/* Atlas orientation rails */
+.okf-orient {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--okf-space-4);
+  margin: 0 0 var(--okf-space-6);
+}
+.okf-orient__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--okf-space-2);
+  min-width: 0;
+  padding: var(--okf-space-3);
+  background: var(--okf-bg-elev);
+  border: 1px solid var(--okf-border);
+  border-radius: var(--okf-radius);
+}
+.okf-orient__title {
+  margin: 0 0 var(--okf-space-1);
+  font-size: var(--okf-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--okf-fg-muted);
+}
+.okf-orient__row {
+  display: flex;
+  gap: var(--okf-space-2);
+  align-items: flex-start;
+  padding: var(--okf-space-2);
+  border-radius: var(--okf-radius-sm);
+  border-left: 3px solid var(--okf-type-accent, var(--okf-border));
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s ease;
+}
+.okf-orient__row:hover { background: var(--okf-bg-inset); text-decoration: none; }
+.okf-orient__row-icon { flex-shrink: 0; margin-top: 2px; }
+.okf-orient__row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.okf-orient__row-body strong { font-size: var(--okf-text-sm); }
+.okf-orient__row-body .okf-muted { font-size: var(--okf-text-xs); }
+.okf-orient__empty { margin: 0; font-size: var(--okf-text-sm); }
+.okf-theme-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.okf-theme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--okf-type-accent, var(--okf-border)) 35%, var(--okf-border));
+  border-radius: var(--okf-radius-pill);
+  background: color-mix(in srgb, var(--okf-type-accent, var(--okf-accent)) 8%, var(--okf-bg-elev));
+  font-size: var(--okf-text-xs);
+  font-weight: 600;
+  text-decoration: none;
+}
+.okf-theme-chip:hover { text-decoration: none; border-color: var(--okf-type-accent, var(--okf-accent)); }
+.okf-theme-chip__count {
+  color: var(--okf-fg-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.okf-orient__map {
+  display: block;
+  border-radius: var(--okf-radius-sm);
+  overflow: hidden;
+  color: var(--okf-fg-muted);
+  text-decoration: none;
+}
+.okf-orient__map:hover { text-decoration: none; }
+.okf-mini-graph { width: 100%; height: auto; display: block; }
+.okf-orient__map-fallback {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  background: var(--okf-bg-inset);
+  color: var(--okf-accent);
+  font-weight: 600;
+  font-size: var(--okf-text-sm);
+}
+.okf-about {
+  margin: 0 0 var(--okf-space-5);
+  padding: var(--okf-space-3) var(--okf-space-4);
+  border: 1px solid var(--okf-border);
+  border-radius: var(--okf-radius);
+  background: var(--okf-bg-elev);
+}
+.okf-about > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--okf-text-sm);
+  color: var(--okf-fg-muted);
+}
+.okf-about[open] > summary { margin-bottom: var(--okf-space-3); color: var(--okf-fg); }
+.okf-browse { margin: var(--okf-space-5) 0 var(--okf-space-7); }
+.okf-browse__head { margin-bottom: var(--okf-space-4); }
+.okf-browse__title {
+  margin: 0 0 var(--okf-space-1);
+  font-family: var(--okf-font-display);
+  font-size: var(--okf-text-lg);
+  letter-spacing: -0.01em;
+}
+.okf-browse__lede { margin: 0; }
 
 .okf-section { margin: var(--okf-space-6) 0; }
 .okf-section__title {
@@ -1156,7 +1319,7 @@ sup.okf-footnote-ref { line-height: 0; }
   white-space: nowrap;
 }
 
-/* Phase 5: recently-changed rail in the hero (studio.js, serve mode). */
+/* Phase 5: recently-changed rail in the hero / orientation slot. */
 .okf-recent {
   display: flex;
   flex-wrap: wrap;
@@ -1164,6 +1327,15 @@ sup.okf-footnote-ref { line-height: 0; }
   gap: var(--okf-space-2);
   margin-top: var(--okf-space-3);
   font-size: var(--okf-text-sm);
+}
+#okf-recent-slot .okf-recent {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 0;
+  gap: var(--okf-space-1);
+}
+#okf-recent-slot .okf-recent__item {
+  display: block;
 }
 .okf-recent__label {
   font-size: var(--okf-text-xs);
@@ -1212,8 +1384,8 @@ sup.okf-footnote-ref { line-height: 0; }
 /* ---- Page (concept) layout -------------------------------------------- */
 .okf-page {
   display: grid;
-  grid-template-columns: var(--okf-sidebar-w, 272px) minmax(0, 1fr);
-  gap: var(--okf-space-6);
+  grid-template-columns: var(--okf-sidebar-w, 272px) minmax(0, 1fr) minmax(200px, 280px);
+  gap: var(--okf-space-5);
   flex: 1;
   max-width: var(--okf-page-maxw);
   margin: 0 auto;
@@ -1298,6 +1470,90 @@ sup.okf-footnote-ref { line-height: 0; }
 .okf-sidebar-toc .toc-h1 { font-weight: 600; }
 .okf-sidebar-toc .toc-h2 { padding-left: var(--okf-space-2); }
 .okf-sidebar-toc .toc-h3 { padding-left: calc(var(--okf-space-2) * 2); }
+
+/* Demoted Ask-agent entry (replaces equal-weight Quick Actions panel). */
+.okf-sidebar-ask { margin-top: var(--okf-space-1); }
+.okf-sidebar-ask__btn {
+  width: 100%;
+  font: inherit;
+  font-size: var(--okf-text-sm);
+  font-weight: 600;
+  padding: 8px 12px;
+  border: 1px dashed var(--okf-border-strong);
+  border-radius: var(--okf-radius);
+  background: transparent;
+  color: var(--okf-fg-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.okf-sidebar-ask__btn:hover {
+  border-color: var(--okf-accent);
+  color: var(--okf-accent);
+  background: var(--okf-accent-bg);
+}
+
+/* Right infobox rail — structured OKF facts beside the prose. */
+.okf-page__infobox {
+  position: sticky;
+  top: calc(var(--okf-topbar-h) + 16px);
+  align-self: start;
+  max-height: calc(100vh - var(--okf-topbar-h) - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--okf-space-3);
+  padding: var(--okf-space-3);
+  background: var(--okf-bg-elev);
+  border: 1px solid var(--okf-border);
+  border-radius: var(--okf-radius);
+  font-size: var(--okf-text-sm);
+}
+.okf-infobox__title {
+  margin: 0;
+  font-size: var(--okf-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--okf-fg-muted);
+}
+.okf-infobox__section { display: flex; flex-direction: column; gap: 6px; }
+.okf-infobox__section + .okf-infobox__section {
+  padding-top: var(--okf-space-2);
+  border-top: 1px solid var(--okf-border);
+}
+.okf-infobox__label {
+  font-size: var(--okf-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--okf-fg-muted);
+}
+.okf-infobox__rel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  font-size: var(--okf-text-sm);
+}
+.okf-infobox__rel .okf-rel-type {
+  font-family: ui-monospace, monospace;
+  font-size: var(--okf-text-xs);
+}
+.okf-infobox__meta { color: var(--okf-fg-muted); font-size: var(--okf-text-xs); }
+.okf-infobox__resource {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  background: var(--okf-accent);
+  color: var(--okf-accent-on);
+  border-radius: var(--okf-radius-sm);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: var(--okf-text-sm);
+}
+.okf-infobox__resource:hover { background: var(--okf-accent-hover); text-decoration: none; color: var(--okf-accent-on); }
+.okf-infobox__tags { display: flex; flex-wrap: wrap; gap: 4px; }
 
 /* Quick intents panel. Phase 1: these are BUTTONS — they used to render
  * as what looked like empty text inputs (white fill, thin border). The
@@ -1584,6 +1840,82 @@ details.okf-frontmatter th { background: var(--okf-bg-inset); }
   color: var(--okf-fg-muted); font-size: var(--okf-text-sm); margin: var(--okf-space-1) 0 0;
 }
 .okf-search-empty { color: var(--okf-fg-muted); padding: var(--okf-space-7) 0; text-align: center; }
+.okf-search-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 var(--okf-space-4);
+}
+.okf-search-filter__chip {
+  font: inherit;
+  font-size: var(--okf-text-xs);
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid var(--okf-border);
+  border-radius: var(--okf-radius-pill);
+  background: var(--okf-bg-elev);
+  color: var(--okf-fg-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.okf-search-filter__chip.is-active,
+.okf-search-filter__chip:hover {
+  border-color: var(--okf-type-accent, var(--okf-accent));
+  color: var(--okf-type-accent, var(--okf-accent));
+  background: color-mix(in srgb, var(--okf-type-accent, var(--okf-accent)) 8%, var(--okf-bg-elev));
+}
+.okf-search-filter__n {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.okf-search-group { margin: 0 0 var(--okf-space-5); }
+.okf-search-group__title {
+  margin: 0 0 var(--okf-space-2);
+  font-size: var(--okf-text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.okf-search-group__count {
+  color: var(--okf-fg-muted);
+  font-weight: 500;
+}
+.okf-search-empty-recents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--okf-space-2);
+  max-width: 420px;
+  margin: 0 auto;
+  text-align: left;
+}
+.okf-search-empty-recents__label {
+  margin: 0;
+  font-size: var(--okf-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--okf-fg-muted);
+}
+.okf-search-suggest {
+  display: flex;
+  align-items: center;
+  gap: var(--okf-space-2);
+  padding: var(--okf-space-2) var(--okf-space-3);
+  border: 1px solid var(--okf-border);
+  border-left: 3px solid var(--okf-type-accent, var(--okf-border));
+  border-radius: var(--okf-radius);
+  text-decoration: none;
+  color: inherit;
+  background: var(--okf-bg-elev);
+}
+.okf-search-suggest:hover { border-color: var(--okf-accent); text-decoration: none; }
+.okf-search-suggest .okf-muted { margin-left: auto; font-size: var(--okf-text-xs); }
 
 /* ---- Hover popover (P2-70: role=tooltip, focus + hover) --------------- */
 .okf-popover {
@@ -1625,10 +1957,18 @@ details.okf-frontmatter th { background: var(--okf-bg-inset); }
    * grid rows + order put the article on top and the rail below it. */
   .okf-page__sidebar { position: static; order: 2; resize: none; max-width: none; }
   .okf-page__main { order: 1; }
+  .okf-page__infobox { position: static; order: 3; max-height: none; }
   .okf-local-graph { max-height: 200px; }
   .okf-index, .okf-search { padding: var(--okf-space-4); }
   .okf-cardgrid { grid-template-columns: 1fr; }
   .okf-hero__graph-link { margin-left: 0; }
+  .okf-orient { grid-template-columns: 1fr 1fr; }
+  .okf-orient__col--map { grid-column: 1 / -1; }
+  .okf-hero--atlas { padding: var(--okf-space-4); }
+}
+
+@media (max-width: 600px) {
+  .okf-orient { grid-template-columns: 1fr; }
 }
 
 /* iter2 CRI2-002: under 600px the static-mode search helper text

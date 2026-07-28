@@ -1416,14 +1416,10 @@ def test_graph_lod_stopgap(server_url: str, page) -> None:
 
 def test_mobile_sticky_chrome_under_64px_and_search_note_guard(server_url: str, page) -> None:
     """On a 390x844 mobile viewport, sticky chrome above the concept h1 must
-    be a single topbar row (<= ~64px), the studio bar must NOT be sticky
-    (it scrolls with content), and the static-mode search-note prose must be
-    hidden by a max-width:600px CSS rule (CRI2-001/002).
-
-    Drives the live concept page; measures the topbar height + studio bar
-    position directly, and probes stylesheets for the search-note-prose hide
-    rule (the note only renders in static builds, so a structural CSS guard
-    is the stable proof the clip is fixed).
+    be a single topbar row (<= ~64px). Studio controls mount INLINE in the
+    topbar (atlas composition); when present as a legacy sibling bar they
+    must remain non-sticky. Also probes the static-mode search-note prose
+    hide rule (CRI2-001/002).
     """
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"{server_url}/tables/orders", wait_until="load")
@@ -1433,10 +1429,13 @@ def test_mobile_sticky_chrome_under_64px_and_search_note_guard(server_url: str, 
             const tb = document.querySelector('.okf-topbar');
             const sb = document.querySelector('.okf-studio-bar');
             const h1 = document.querySelector('.okf-page__title, h1');
+            const inline = !!(sb && sb.classList.contains('okf-studio-bar--inline'));
             return {
                 topbarHeight: tb ? tb.getBoundingClientRect().height : null,
                 topbarPos: tb ? getComputedStyle(tb).position : null,
                 studioPos: sb ? getComputedStyle(sb).position : null,
+                studioInline: inline,
+                studioInTopbar: !!(tb && sb && tb.contains(sb)),
                 h1Top: h1 ? h1.getBoundingClientRect().top : null,
             };
         }"""
@@ -1449,10 +1448,16 @@ def test_mobile_sticky_chrome_under_64px_and_search_note_guard(server_url: str, 
     assert chrome["topbarPos"] == "sticky", (
         f"topbar must stay sticky; got position={chrome['topbarPos']!r}"
     )
-    assert chrome["studioPos"] == "static", (
-        f"studio bar must be non-sticky on mobile; got position={chrome['studioPos']!r} "
-        f"(CRI2-001 — the second sticky bar crowds the fold)"
-    )
+    if chrome.get("studioInline") or chrome.get("studioInTopbar"):
+        # Atlas composition: studio controls live inside the sticky topbar.
+        assert chrome["studioInTopbar"], (
+            "inline studio bar must mount inside .okf-topbar"
+        )
+    else:
+        assert chrome["studioPos"] == "static", (
+            f"studio bar must be non-sticky on mobile; got position={chrome['studioPos']!r} "
+            f"(CRI2-001 — the second sticky bar crowds the fold)"
+        )
     # Structural guard: a CSS rule must hide .okf-search-note__prose inside a
     # max-width:600px media query (CRI2-002). The note only renders in static
     # builds, so the stylesheet rule is the stable proof the clip is fixed.
