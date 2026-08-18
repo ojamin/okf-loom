@@ -11,6 +11,7 @@ The files stay plain Markdown throughout.**
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](docs-bundle/tutorials/install.md)
 [![Zero runtime deps](https://img.shields.io/badge/runtime%20deps-zero-brightgreen.svg)](docs-bundle/explanation/zero_dependencies.md)
 [![Tests](https://img.shields.io/badge/tests-1200%2B%20passing-brightgreen.svg)](tests/)
+[![OKF BundleDex](https://bundledex.net/static-badge.svg)](https://bundledex.net)
 
 **[▶ Live demo](https://ojamin.github.io/okf-loom/)** — this repo's docs
 bundle as a static build (the live studio adds commenting on top).
