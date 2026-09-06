@@ -584,7 +584,7 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
 
     # ------------------------------------------------------------------
     # Step 13: resolution appears in the open comments panel and durable feed.
-    expect(page.get_by_text('Done - added the link', exact=True)).to_be_visible(timeout=5_000)
+    expect(page.locator('.okf-comment__reply')).to_contain_text('Done - added the link', timeout=5_000)
     # ------------------------------------------------------------------
     resolve_seen = False
     deadline = time.monotonic() + 5.0
