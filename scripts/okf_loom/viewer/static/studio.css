@@ -1467,3 +1467,14 @@ html.okf-studio-booted .okf-studio-fallback-banner { display: none; }
   .okf-studio-bar__group--right { margin-left: 0; }
   .okf-studio-bar__group { flex-shrink: 1; }
 }
+
+.okf-studio-tools { position: relative; }
+.okf-studio-tools > summary { padding: 8px 10px; min-height: 36px; border: 1px solid var(--okf-border-strong); border-radius: var(--okf-radius-sm); cursor: pointer; white-space: nowrap; }
+.okf-studio-tools__content { position: absolute; right: 0; top: calc(100% + 8px); z-index: 40; display: grid; gap: 10px; width: max-content; max-width: min(340px, calc(100vw - 32px)); padding: 16px; background: var(--okf-bg-elev); border: 1px solid var(--okf-border); border-radius: var(--okf-radius); box-shadow: var(--okf-shadow); }
+.okf-studio-tools__content > button { justify-content: flex-start; }
+.okf-studio-tools__content .okf-viewswitch { flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .okf-studio-tools > summary { min-height: 44px; display: flex; align-items: center; }
+  .okf-studio-bar .okf-conn { margin-left: auto; }
+  .okf-studio-tools__content { right: 0; }
+}

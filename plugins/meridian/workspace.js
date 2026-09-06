@@ -64,6 +64,7 @@ export function LoomWorkspace() {
 }
 
 function Workspace({ host }) {
+  const [browsing, setBrowsing] = useState(false);
   const [api, setApi] = useState(null),
     [capabilities, setCapabilities] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -142,6 +143,10 @@ function Workspace({ host }) {
     setComments(notes.comments);
     setEvents(feed.events);
     setPresence(status.presence || null);
+    if (!status.ok)
+      throw new Error(
+        "Loom could not reload the bundle. Fix the source error in the full studio before continuing.",
+      );
   }
 
   useEffect(() => {
@@ -223,6 +228,7 @@ function Workspace({ host }) {
   }, [api, selected, creating]);
 
   function navigate(id) {
+    setBrowsing(false);
     setSelected(id);
     setCreating(false);
     setTab("Read");
@@ -395,12 +401,26 @@ function Workspace({ host }) {
           }),
         ),
       ),
+    button(
+      `Browse & search · ${catalog.length} concepts`,
+      () => setBrowsing(!browsing),
+      {
+        className: "loom-browse-toggle",
+        "aria-expanded": browsing,
+        "aria-controls": "loom-catalog",
+      },
+    ),
     h(
       "div",
       { className: "loom-grid" },
       h(
         "nav",
-        { className: "loom-catalog", "aria-label": "Concepts" },
+        {
+          className: "loom-catalog",
+          "aria-label": "Concepts",
+          id: "loom-catalog",
+          "data-collapsed": !browsing,
+        },
         h(
           "form",
           {

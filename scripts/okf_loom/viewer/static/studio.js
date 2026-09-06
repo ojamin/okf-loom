@@ -269,6 +269,19 @@ import { createClient } from "./client.js";
   const leftGroup = el("div", { class: "okf-studio-bar__group" });
   const rightGroup = el("div", { class: "okf-studio-bar__group okf-studio-bar__group--right" });
 
+  const toolsMenu = el("details", { class: "okf-studio-tools" });
+  const toolsSummary = el("summary", { text: "Studio tools" });
+  const toolsGroup = el("div", { class: "okf-studio-tools__content" });
+  toolsMenu.appendChild(toolsSummary);
+  toolsMenu.appendChild(toolsGroup);
+  toolsMenu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      toolsMenu.open = false;
+      toolsSummary.focus();
+      event.stopPropagation();
+    }
+  });
+
   // Presence chip
   const presenceDot = el("span", { class: "okf-presence__dot", "aria-hidden": "true" });
   const presenceLabel = el("span", { class: "okf-presence__label" });
@@ -317,7 +330,7 @@ import { createClient } from "./client.js";
       toast("Could not update agent watching state.", { tone: "error" });
     });
   });
-  leftGroup.appendChild(watchingToggle);
+  toolsGroup.appendChild(watchingToggle);
 
   // Connection indicator (driven by live.js hub). iter1 CRI-015: aria-live
   // so "Reconnecting…" / "Live" / "Offline" state changes are announced to
@@ -375,7 +388,8 @@ import { createClient } from "./client.js";
   // Assemble bar (view switch only on concept pages)
   rightGroup.appendChild(commentsBtn);
   rightGroup.appendChild(changesBtn);
-  rightGroup.appendChild(paletteBtn);
+  toolsGroup.appendChild(paletteBtn);
+  rightGroup.appendChild(toolsMenu);
   rightGroup.appendChild(connChip);
   bar.appendChild(leftGroup);
   bar.appendChild(rightGroup);
@@ -388,7 +402,12 @@ import { createClient } from "./client.js";
       document.body.insertBefore(bar, document.body.firstChild);
     }
     if (isConceptPage()) {
-      leftGroup.appendChild(viewSwitch);
+      const compact = window.matchMedia("(max-width: 720px)");
+      const placeViews = () => {
+        (compact.matches ? toolsGroup : leftGroup).appendChild(viewSwitch);
+      };
+      placeViews();
+      compact.addEventListener("change", placeViews);
     }
   }
 
@@ -3094,7 +3113,7 @@ import { createClient } from "./client.js";
         const btn = el("button", { type: "button", class: "okf-iconbtn", "aria-expanded": "false", "aria-controls": "okf-panel", text: impl.label });
         btn.addEventListener("click", () => togglePanel(impl.id));
         impl._btn = btn;
-        rightGroup.insertBefore(btn, paletteBtn);
+        toolsGroup.insertBefore(btn, paletteBtn);
       }
       if (state.openPanel === impl.id) openPanel(impl.id);
       return impl;

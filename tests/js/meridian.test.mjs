@@ -48,6 +48,10 @@ test('document rendering strips active content and dangerous links',()=>{
   assert.match(markup,/<strong>world<\/strong>/);
   assert.match(markup,/href="\/topic"/);
   assert.doesNotMatch(markup,/script|onclick|iframe|onerror|javascript/);
+  const anchors=safeMarkup('<h2 id="schema">Schema</h2><a href="#schema">Jump</a><img alt="Revenue chart" src="x">',window.document);
+  assert.match(anchors,/id="loom-document-schema"/);
+  assert.match(anchors,/href="#loom-document-schema"/);
+  assert.match(anchors,/Image: Revenue chart/);
   window.close();
 });
 test('placement state follows host context without broadening its scope',()=>{

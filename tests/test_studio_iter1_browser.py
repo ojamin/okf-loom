@@ -473,6 +473,7 @@ def test_palette_escape_restores_focus(server_url: str, page) -> None:
     _wait_for_studio(page)
     # Focus the palette button, open via it, then Escape. (The
     # trigger is the labelled "Commands" button, class .okf-palettebtn.)
+    page.locator(".okf-studio-tools > summary").click()
     page.locator(".okf-palettebtn").first.focus()
     trigger = page.evaluate("document.activeElement")
     page.keyboard.press("Control+k")
@@ -1792,6 +1793,7 @@ def test_agent_watching_toggle_posts_presence(server_url: str, page) -> None:
     page.goto(f"{server_url}/tables/orders", wait_until="load")
     _wait_for_studio(page)
     # The toggle must exist with an accessible name + aria-pressed.
+    page.locator(".okf-studio-tools > summary").click()
     toggle = page.locator(".okf-watch-toggle")
     expect(toggle).to_be_visible()
     label = toggle.get_attribute("aria-label") or ""

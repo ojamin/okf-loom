@@ -89,10 +89,17 @@ export function safeMarkup(html, document) {
   );
   const visit = (root) => {
     for (const node of [...root.children]) {
+      if (node.tagName === "IMG") {
+        const label = document.createElement("span");
+        label.textContent = `[Image: ${node.getAttribute("alt") || "embedded media"}. Open full studio to view.]`;
+        node.replaceWith(label);
+        continue;
+      }
       if (!tags.has(node.tagName)) {
         node.remove();
         continue;
       }
+      const id = node.getAttribute("id");
       for (const attr of [...node.attributes]) {
         if (
           !(node.tagName === "A" && attr.name === "href") &&
@@ -100,6 +107,7 @@ export function safeMarkup(html, document) {
         )
           node.removeAttribute(attr.name);
       }
+      if (id) node.id = "loom-document-" + encodeURIComponent(id);
       if (node.tagName === "A") {
         const href = node.getAttribute("href") || "";
         if (
@@ -109,6 +117,17 @@ export function safeMarkup(html, document) {
           if (/^(?:https?:|mailto:)/i.test(href)) {
             node.target = "_blank";
             node.rel = "noopener noreferrer";
+          }
+          if (href.startsWith("#")) {
+            try {
+              node.setAttribute(
+                "href",
+                "#loom-document-" +
+                  encodeURIComponent(decodeURIComponent(href.slice(1))),
+              );
+            } catch {
+              node.removeAttribute("href");
+            }
           }
         } else node.removeAttribute("href");
       }

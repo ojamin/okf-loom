@@ -109,9 +109,9 @@ def _wait_for_server(proc: subprocess.Popen, base: str) -> None:
     pytest.fail(f"okf serve not ready within {_SERVER_STARTUP_TIMEOUT:g}s")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def e2e_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A module-scoped COPY of samples/demo_bundle the e2e can mutate freely.
+    """An isolated COPY of samples/demo_bundle the e2e can mutate freely.
 
     The lead paragraph ``_LEAD_PARA`` is prepended to ``tables/orders.md`` so
     the assignment's literal step "select the body text 'An orders table'"
@@ -144,12 +144,11 @@ def e2e_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return dst
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def server_url(e2e_bundle: Path) -> str:
     """Start ``okf serve <e2e_bundle>`` on a free port; yield the base URL.
 
-    Module-scoped so the (slow) server boot happens once for the whole test
-    module. Teardown terminates the subprocess cleanly.
+    Function-scoped so collaboration tests never share comment or history state. Teardown terminates the subprocess cleanly.
     """
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
@@ -236,6 +235,20 @@ def test_reading_context_and_toolbar_reflow(page, server_url):
     context.locator('summary').first.click()
     page.set_viewport_size({'width':390,'height':844})
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    page.locator('.okf-studio-tools > summary').click()
+    expect(page.get_by_role('button',name='Source',exact=True)).to_be_visible()
+    page.get_by_role('button',name='Source',exact=True).click()
+    page.get_by_role('button',name='Rendered',exact=True).click()
+    for state in ('watching', 'idle'):
+        with page.expect_response(lambda r: r.url.endswith('/__presence')) as response:
+            page.locator('.okf-watch-toggle').click()
+        assert response.value.ok
+        assert response.value.json()['presence']['state'] == state
+    page.locator('.okf-palettebtn').click()
+    expect(page.locator('.okf-palette-overlay')).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page.locator('.okf-palettebtn')).to_be_focused()
+    page.locator('.okf-studio-tools > summary').click()
     for control in page.locator('.okf-studio-bar button').all():
         if control.is_visible():
             bounds = control.bounding_box()
@@ -302,6 +315,10 @@ def test_meridian_workspace_with_real_loom_api(page, server_url, e2e_bundle, tmp
     page.screenshot(path=str(evidence/'desktop.png'))
     page.set_viewport_size({'width':390,'height':844})
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    expect(page.locator('.loom-catalog')).not_to_be_visible()
+    page.get_by_role('button',name='Browse & search',exact=False).click()
+    expect(page.get_by_role('searchbox',name='Search concepts')).to_be_visible()
+    page.get_by_role('button',name='Browse & search',exact=False).click()
     page.screenshot(path=str(evidence/'mobile.png'))
     page.evaluate('window.loomTestUnmount()')
     assert page.evaluate('window.loomTestDisposed === true')
