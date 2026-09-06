@@ -275,7 +275,7 @@ import { createClient } from "./client.js";
   toolsMenu.appendChild(toolsSummary);
   toolsMenu.appendChild(toolsGroup);
   toolsMenu.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !paletteState.open && !state.openPanel) {
       toolsMenu.open = false;
       toolsSummary.focus();
       event.stopPropagation();
@@ -2925,7 +2925,7 @@ import { createClient } from "./client.js";
     paletteState.input.value = "";
     refreshPaletteList("");
     paletteState._lastFocus = document.activeElement;
-    setTimeout(() => paletteState.input.focus(), 20);
+    setTimeout(() => { if (paletteState.open) paletteState.input.focus(); }, 20);
   }
   function closePalette() {
     if (!paletteState.overlay) return;
