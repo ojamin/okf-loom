@@ -22,3 +22,18 @@ Authoritative documentation:
 - [`docs-bundle/reference/spec.md`](../docs-bundle/reference/spec.md)
 
 Tests in `tests/` are the executable examples for checkout-local behavior.
+
+Studio platform boundaries:
+
+- `transactions.py`: cooperating writer serialization across threads/processes.
+- `events.py`, `watcher.py`, `lifecycle.py`: event delivery, filesystem refresh,
+  and explicit host-controlled server lifetime.
+- `contracts.py`, `client.py`, `viewer/static/client.js`: API discovery and
+  dependency-free integration clients.
+- `viewer/workspace.py`, `viewer/static/workspace.*`: shared reading navigation
+  and progressive catalog behavior.
+- `viewer/static/document-patch.js`: bounded incremental document reconciliation.
+
+See [embedding and migration](../docs/overhaul/integration.md),
+[intent inventory](../docs/overhaul/intent.md), and
+[overhaul plan](../docs/overhaul/plan.md).

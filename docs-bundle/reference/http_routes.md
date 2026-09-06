@@ -24,11 +24,13 @@ y/N ack. See [cli.md § serve](cli.md#serve).
 
 | Method | Route | Purpose |
 |---|---|---|
+| GET | `/__api/v1` | Versioned route/capability discovery and apply argument schemas; no secrets. |
+| GET | `/__health` | Readiness and content-reload status. |
 | GET | `/` | Root index page (top-level concepts + subdirs + graph link). |
 | GET | `/<concept_id>` | Concept page (rendered MD, frontmatter, backlinks, outgoing, local graph). |
 | GET | `/<dir>/` | Directory index page. |
 | GET | `/__graph` | Full-page Cytoscape.js force-directed graph. |
-| GET | `/__search` | Search results (`&format=json` for SPA fetch). |
+| GET | `/__search` | Search results (`&format=json` for JSON; `mode=lexical|semantic|hybrid|tag|entity|relation`). |
 | GET | `/__raw/<concept_id>` | Raw markdown body. |
 | GET | `/__data/graph.json` | Graph JSON for external tools. |
 | GET | `/__data/content.json` | Full content index JSON. |
@@ -41,6 +43,8 @@ y/N ack. See [cli.md § serve](cli.md#serve).
 | GET | `/<path>.<media ext>` | Bundle-local media file (screenshots, diagrams, video, PDF). |
 | POST | `/__comment` | User's comment / threaded reply → `directives.jsonl`. |
 | POST | `/__comment-update` | User-facing state/archive transition, or a body edit of a not-yet-resolved comment. |
+| POST | `/__claim` | Claim `{id, actor, summary?}`; a competing owner or terminal state returns 409. |
+| POST | `/__resolve` | Resolve `{id, summary?, activity?, reply?}` using the existing comment lifecycle. |
 | POST | `/__presence` | Agent presence (idle/watching/thinking/editing) + optional progress `message`. |
 | POST | `/__apply` | Run a whitelisted `UpdateOp` via the studio write funnel. |
 | POST | `/__undo` | Restore a prior snapshot (single or group). |
