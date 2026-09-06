@@ -3007,7 +3007,17 @@ import { createClient } from "./client.js";
   const panelClose = el("button", { type: "button", class: "okf-panel__close", "aria-label": "Close panel", text: "Esc" });
   panelHeader.appendChild(panelTitle); panelHeader.appendChild(panelClose);
   const panelBody = el("div", { class: "okf-panel__body", id: "okf-panel-body" });
-  panelShell.appendChild(panelHeader); panelShell.appendChild(panelBody);
+  const panelNav = el("nav", { class: "okf-panel__nav", "aria-label": "Studio panels" });
+  const panelNavButtons = {};
+  [["comments", "Comments", "Show comments"], ["changes", "Changes", "Show changes"],
+   ["agent-activity", "Agent", "Show agent activity"]].forEach(([id, label, name]) => {
+    const button = el("button", { type: "button", text: label, "aria-label": name,
+      "aria-pressed": "false", "aria-controls": "okf-panel-body" });
+    button.addEventListener("click", () => openPanel(id));
+    panelNavButtons[id] = button;
+    panelNav.appendChild(button);
+  });
+  panelShell.appendChild(panelHeader); panelShell.appendChild(panelNav); panelShell.appendChild(panelBody);
   document.body.appendChild(panelOverlay); document.body.appendChild(panelShell);
   panelOverlay.addEventListener("click", closePanel);
   panelClose.addEventListener("click", closePanel);
@@ -3031,6 +3041,9 @@ import { createClient } from "./client.js";
     panelOverlay.hidden = false;
     panelTitle.textContent = p.label;
     panelShell.setAttribute("aria-label", p.label);
+    Object.entries(panelNavButtons).forEach(([key, button]) => {
+      button.setAttribute("aria-pressed", String(key === id));
+    });
     // Update aria-expanded on every toggle button.
     [commentsBtn, changesBtn].forEach((b) => b.setAttribute("aria-expanded", "false"));
     const tb = ({ comments: commentsBtn, changes: changesBtn })[id];

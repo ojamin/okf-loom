@@ -179,8 +179,10 @@ def test_http_undo_publishes_after_document_refresh(bundle, monkeypatch):
     from okf_loom.model import Bundle
     with create_server(bundle, port=0, watch=False) as server:
         client = StudioClient(server.url, token=server.csrf_token)
-        client.apply('replace_text', 'topic', {'old': 'Original', 'new': 'Revised'}, group_id='undo-order')
         events = server.studio.bus.subscribe()
+        client.apply('replace_text', 'topic', {'old': 'Original', 'new': 'Revised'}, group_id='undo-order')
+        while events.get(timeout=2)['type'] != 'changed':
+            pass
         original_load = Bundle.load
         def checked_load(*args, **kwargs):
             # While undo is refreshing the read model, a live client must
@@ -189,7 +191,7 @@ def test_http_undo_publishes_after_document_refresh(bundle, monkeypatch):
             return original_load(*args, **kwargs)
         monkeypatch.setattr(Bundle, 'load', checked_load)
         assert client.undo(group_id='undo-order')['ok']
-        assert not events.empty()
+        assert events.get(timeout=2)['type'] == 'activity'
         assert 'Original' in client.document('topic')['raw']
         server.studio.bus.unsubscribe(events)
 

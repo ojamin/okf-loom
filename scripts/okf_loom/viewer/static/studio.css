@@ -1450,3 +1450,8 @@ html.okf-studio-booted .okf-studio-fallback-banner { display: none; }
   word-break: break-word;
   padding-right: var(--okf-space-2);
 }
+
+/* Switch context inside the modal without reaching obscured page controls. */
+.okf-panel__nav { display: flex; gap: 8px; padding: 0 24px 16px; border-bottom: 1px solid var(--okf-border); flex-shrink: 0; }
+.okf-panel__nav button { flex: 1; min-height: 44px; font: inherit; font-size: 13px; color: var(--okf-fg-muted); background: transparent; border: 1px solid var(--okf-border); border-radius: var(--okf-radius); cursor: pointer; }
+.okf-panel__nav button[aria-pressed="true"] { color: var(--okf-accent); background: var(--okf-accent-bg); border-color: var(--okf-accent); font-weight: 600; }

@@ -510,9 +510,9 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     )
 
     # (c) Inspect the visible activity panel as well as its durable record.
-    page.get_by_role('button', name='Changes', exact=True).click()
+    page.get_by_role('button', name='Show changes', exact=True).click()
     expect(page.get_by_role('button', name='Undo group', exact=True)).to_be_visible(timeout=5_000)
-    page.get_by_role('button', name='Comments', exact=True).click()
+    page.get_by_role('button', name='Show comments', exact=True).click()
     filtered = page.evaluate(
         """async () => {
             const r = await fetch('/__data/events?concept=tables/orders&limit=50');
@@ -625,7 +625,7 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     csrf_token = token_proc.stdout.strip()
     assert csrf_token, "okf token returned empty"
 
-    page.get_by_role('button', name='Changes', exact=True).click()
+    page.get_by_role('button', name='Show changes', exact=True).click()
     with page.expect_response(lambda r: r.url.endswith('/__undo'), timeout=10_000) as undo_response:
         page.get_by_role('button', name='Undo group', exact=True).click()
     response = undo_response.value
