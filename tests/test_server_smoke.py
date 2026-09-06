@@ -352,39 +352,9 @@ def test_run_server_warns_when_effective_gate_open(
     monkeypatch.setenv(assets.OPERATOR_CONSENT_ENV, "1")
     assets.clear_overrides_cache()
 
-    # Drive run_server just far enough to emit the warning, then stop it
-    # before serve_forever blocks. We patch ThreadingHTTPServer to a stub
-    # whose serve_forever returns immediately.
     import okf_loom.server as srv
-
-    class _StubServer:
-        def __init__(self, *a, **kw):
-            pass
-
-        def __setattr__(self, k, v):
-            object.__setattr__(self, k, v)
-
-        def serve_forever(self):
-            return None
-
-        def shutdown(self):
-            return None
-
-        def server_close(self):
-            return None
-
-    monkeypatch.setattr(srv, "ThreadingHTTPServer", _StubServer)
-    # Disable the watcher + browser opener to keep the test hermetic.
-    monkeypatch.setattr(srv.time, "sleep", lambda *_a: None)
-    monkeypatch.setattr(srv.webbrowser, "open", lambda *_a, **_k: None)
-
-    srv.run_server(
-        tiny_good_bundle,
-        host="127.0.0.1",
-        port=_free_port(),
-        watch=False,
-        open_browser=False,
-    )
+    with srv.create_server(tiny_good_bundle, port=0, watch=False):
+        pass
     out = capsys.readouterr()
     assert "active code" in out.err.lower()
     assert "ENABLED" in out.err
@@ -412,33 +382,8 @@ def test_run_server_silent_when_gate_closed(
 
     import okf_loom.server as srv
 
-    class _StubServer:
-        def __init__(self, *a, **kw):
-            pass
-
-        def __setattr__(self, k, v):
-            object.__setattr__(self, k, v)
-
-        def serve_forever(self):
-            return None
-
-        def shutdown(self):
-            return None
-
-        def server_close(self):
-            return None
-
-    monkeypatch.setattr(srv, "ThreadingHTTPServer", _StubServer)
-    monkeypatch.setattr(srv.time, "sleep", lambda *_a: None)
-    monkeypatch.setattr(srv.webbrowser, "open", lambda *_a, **_k: None)
-
-    srv.run_server(
-        tiny_good_bundle,
-        host="127.0.0.1",
-        port=_free_port(),
-        watch=False,
-        open_browser=False,
-    )
+    with srv.create_server(tiny_good_bundle, port=0, watch=False):
+        pass
     err = capsys.readouterr().err
     assert "active code" not in err.lower()
     assert "ENABLED" not in err

@@ -44,6 +44,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 from .model import Bundle, Concept
 from .paths import ConceptId, ConceptIdError, concept_id_from_str, concept_id_to_str
 from .studio import Studio, rev_of
+from .lifecycle import StudioServer
 from .render import (
     build_graph_data,
     _render_concept_page,
@@ -60,6 +61,8 @@ from .viewer.assets import (
     resolve_palette,
     effective_allow_active_code,
     clear_overrides_cache,
+    operator_scope,
+    isolated_server_factory,
 )
 from .viewer.markdown import markdown_to_html, rewrite_internal_links, url_for_concept
 
@@ -153,117 +156,7 @@ class NoOpPlugin:
 # Bundle watcher
 # ---------------------------------------------------------------------------
 
-class _BundleWatcher(threading.Thread):
-    """Polls the bundle dir for ``.md`` mtime changes and reloads the bundle.
-
-    Uses ``os.stat`` rather than watchdog, per the hard-constraint list.
-
-    Reload safety (P1-37): the snapshot is advanced ONLY after a successful
-    reload. On failure the exception is logged to stderr (with the failing
-    path) and the snapshot is left untouched so the next tick retries — a
-    transient malformed save (e.g. a half-written file) is not silently
-    consumed and the browser never shows stale content with no signal.
-    """
-
-    def __init__(self, bundle_root: Path, reload_fn, *,
-                 interval: float = 1.0, tick_fn=None) -> None:
-        super().__init__(daemon=True, name="okf-watcher")
-        self._root = Path(bundle_root)
-        self._reload_fn = reload_fn
-        self._tick_fn = tick_fn  # fires EVERY tick (tail + sweep), even when .md unchanged
-        self._interval = interval
-        # NOTE: named ``_stop_event`` (not ``_stop``) to avoid shadowing
-        # ``threading.Thread._stop()``, which the base class invokes during
-        # ``join()``. The previous ``self._stop = Event()`` shadow broke
-        # ``join()`` once the thread had terminated (TypeError: 'Event'
-        # object is not callable) — hidden in production because the watcher
-        # is a daemon whose join() is never called, but exposed by tests
-        # and by any embedding harness that shuts the watcher down cleanly.
-        self._stop_event = threading.Event()
-        self._snapshot = self._scan()
-
-    def _scan(self) -> dict[Path, float]:
-        snap: dict[Path, float] = {}
-        if not self._root.is_dir():
-            return snap
-        # Same exclusion semantics as Bundle.load (spec §5): default
-        # excludes + .gitignore + bundle.exclude. Config and .gitignore are
-        # re-read every tick (cheap small files; the dir pruning makes the
-        # scan far cheaper than the old rglob), so serving a workspace root
-        # live-updates when excludes — or new OKF files — appear.
-        from .config import OkfConfig, OkfConfigError
-        from .ignore import iter_markdown_files
-        try:
-            bundle_cfg = OkfConfig.load(self._root).bundle
-        except OkfConfigError:
-            from .config import BundleConfig
-            bundle_cfg = BundleConfig()  # Bundle.load warns; keep scanning
-        for p in iter_markdown_files(
-            self._root,
-            exclude=bundle_cfg.exclude,
-            include=bundle_cfg.include,
-            respect_gitignore=bundle_cfg.respect_gitignore,
-        ):
-            try:
-                snap[p] = p.stat().st_mtime
-            except OSError:
-                continue
-        # P2-6: also track the bundle config + viewer override config/palette,
-        # so an operator editing okf-loom.config.yaml (e.g. flipping
-        # allow_active_code false->true for lock-down) triggers a reload +
-        # cache invalidation without needing to also touch an .md file.
-        from .config import CONFIG_FILENAME
-        for extra in (
-            self._root / CONFIG_FILENAME,
-            self._root / ".okf-loom" / "viewer" / "config.json",
-            self._root / ".okf-loom" / "viewer" / "palette.json",
-        ):
-            try:
-                if extra.is_file():
-                    snap[extra] = extra.stat().st_mtime
-            except OSError:
-                continue
-        return snap
-
-    def run(self) -> None:
-        while not self._stop_event.wait(self._interval):
-            # ARCH4-001 fix: fire the tick callback EVERY tick, BEFORE the
-            # snapshot check. The tick handles session-feed events.jsonl
-            # mtime → cross-process SSE tail + staleness sweep — these must
-            # fire even when .md files haven't changed (e.g. a CLI claim/
-            # resolve/presence write only touches session files).
-            if self._tick_fn is not None:
-                try:
-                    self._tick_fn()
-                except Exception as e:
-                    print(
-                        f"okf: watcher tick failed: {e}",
-                        file=sys.stderr,
-                    )
-            snap = self._scan()
-            if snap == self._snapshot:
-                continue
-            # Snapshot changed → attempt reload. Only advance self._snapshot
-            # AFTER reload succeeds so a transient failure (malformed save,
-            # disk hiccup, permission blip) is retried on the next tick
-            # instead of being silently swallowed.
-            try:
-                self._reload_fn()
-            except Exception as e:  # noqa: BLE001 — reload errors must not kill the thread
-                # Log every swallowed reload exception with the failing path
-                # so an operator running `okf serve` sees WHY the browser is
-                # showing the previous bundle (P1-37 double-silent fix).
-                print(
-                    f"okf: bundle reload failed for {self._root} "
-                    f"(keeping previous bundle; will retry on next tick): {e}",
-                    file=sys.stderr,
-                )
-                continue  # do NOT advance snapshot → next tick retries.
-            self._snapshot = snap
-
-    def stop(self) -> None:
-        self._stop_event.set()
-
+from .watcher import BundleWatcher as _BundleWatcher  # compatibility alias
 
 # ---------------------------------------------------------------------------
 # Request handler
@@ -365,7 +258,8 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
     # --- Routing ----------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 (http.server convention)
         try:
-            self._route()
+            with operator_scope(getattr(self.server, "operator_consent", None)):
+                self._route()
         except BrokenPipeError:
             pass
         except Exception as e:  # pragma: no cover - defensive
@@ -392,7 +286,8 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
     # --- Live studio: mutating endpoints (§6, §9, §12, §15) -----------------
     def do_POST(self) -> None:  # noqa: N802
         try:
-            self._route_post()
+            with operator_scope(getattr(self.server, "operator_consent", None)):
+                self._route_post()
         except BrokenPipeError:
             pass
         except Exception as e:  # pragma: no cover - defensive
@@ -467,21 +362,28 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
                 content_type="text/plain; charset=utf-8",
             )
 
+        if not isinstance(data, dict):
+            return self._send_json(400, {"ok": False, "error": "JSON body must be an object"})
+        routes = {
+            "/__tunnel": self._handle_tunnel,
+            "/__comment": self._handle_comment,
+            "/__comment-update": self._handle_comment_update,
+            "/__presence": self._handle_presence,
+            "/__claim": self._handle_claim,
+            "/__resolve": self._handle_resolve,
+            "/__apply": self._handle_apply,
+            "/__undo": self._handle_undo,
+            "/__preview": self._handle_preview,
+        }
+        handler = routes.get(path)
+        if handler is None:
+            return self._send_text(404, "Not found", content_type="text/plain; charset=utf-8")
+        # One boundary covers read/check/modify/write, idempotency and group undo.
+        # Tunnel lifecycle is independent of document writes and can be slow.
         if path == "/__tunnel":
-            return self._handle_tunnel(data)
-        if path == "/__comment":
-            return self._handle_comment(data)
-        if path == "/__comment-update":
-            return self._handle_comment_update(data)
-        if path == "/__presence":
-            return self._handle_presence(data)
-        if path == "/__apply":
-            return self._handle_apply(data)
-        if path == "/__undo":
-            return self._handle_undo(data)
-        if path == "/__preview":
-            return self._handle_preview(data)
-        return self._send_text(404, "Not found", content_type="text/plain; charset=utf-8")
+            return handler(data)
+        with studio.transaction():
+            return handler(data)
 
     def _check_write_auth(self) -> bool:
         """Current spec §14 cross-origin guard: valid token + Origin/Host ∈ allowed_hosts.
@@ -558,7 +460,7 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
         # post_comment, so the client retries against the same key with no
         # duplicate directive). Without this lock, two concurrent same-key
         # POSTs race past the lookup and double-append.
-        with self.studio._lock:
+        with self.studio.transaction():
             # Re-check under the lock in case a concurrent same-key POST
             # already populated the cache between the unlocked lookup above
             # and now.
@@ -676,6 +578,38 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
             kwargs["body"] = new_body
         updated = self.studio.update_comment(comment_id, **kwargs)
         self._send_json(200, {"ok": True, "comment": updated})
+
+    def _handle_claim(self, data: dict[str, Any]) -> None:
+        comment_id, actor = data.get("id"), data.get("actor")
+        if not isinstance(comment_id, str) or not isinstance(actor, str) or not actor.strip():
+            return self._send_json(400, {"ok": False, "error": "id and actor required"})
+        summary = data.get("summary")
+        if summary is not None and not isinstance(summary, str):
+            return self._send_json(400, {"ok": False, "error": "summary must be a string"})
+        try:
+            comment = self.studio.update_comment(comment_id, state="claimed",
+                claimed_by=actor, request_summary=summary)
+        except ValueError as exc:
+            return self._send_json(409, {"ok": False, "error": str(exc)})
+        if comment is None:
+            return self._send_json(404, {"ok": False, "error": "comment not found"})
+        self.studio.set_presence(actor=actor, state="editing", focus=comment.get("concept"),
+                                 message=summary)
+        return self._send_json(200, {"ok": True, "comment": comment})
+
+    def _handle_resolve(self, data: dict[str, Any]) -> None:
+        comment_id = data.get("id")
+        activity = data.get("activity", [])
+        if (not isinstance(comment_id, str) or not isinstance(activity, list)
+                or not all(isinstance(v, str) for v in activity)
+                or any(data.get(k) is not None and not isinstance(data[k], str)
+                       for k in ("summary", "reply"))):
+            return self._send_json(400, {"ok": False, "error": "invalid resolve request"})
+        comment = self.studio.resolve_comment(comment_id, reply=data.get("reply"),
+            summary=data.get("summary"), activity_ids=activity)
+        if comment is None:
+            return self._send_json(404, {"ok": False, "error": "comment not found"})
+        return self._send_json(200, {"ok": True, "comment": comment})
 
     def _handle_presence(self, data: dict[str, Any]) -> None:
         state = str(data.get("state", "idle"))
@@ -1132,6 +1066,18 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
         if path.endswith(".md") and not path.startswith("/__") and not path.endswith("/index.md") and path != "/index.md":
             path = path[:-3]
 
+        # Stable integration discovery contains no token or absolute disk path.
+        if path == "/__api/v1":
+            from .contracts import discovery
+            return self._send_json(200, discovery(
+                editing=getattr(self.server, "studio_edit", False),
+                live=getattr(self.server, "studio_live", False)))
+        if path == "/__health":
+            return self._send_json(200, {
+                "ok": not bool(getattr(self.server, "_reload_error", None)),
+                "api_version": "1", "concepts": len(self.bundle.concepts),
+                "reload": "error" if getattr(self.server, "_reload_error", None) else "ready",
+            })
         # Internal endpoints first.
         if path == "/":
             return self._handle_root()
@@ -1253,12 +1199,21 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
         if len(q) > MAX_SEARCH_QUERY_CHARS:
             q = q[:MAX_SEARCH_QUERY_CHARS]
         want_json = query.get("format", ["html"])[0] == "json"
-        results = self._run_search(q, limit=30)
+        from .search import SearchMode, search_bundle
+        mode = query.get("mode", ["lexical"])[0]
+        try:
+            search_mode = SearchMode(mode)
+        except ValueError:
+            return self._send_json(400, {"ok": False, "error": "unknown search mode"})
+        if search_mode == SearchMode.LEXICAL:
+            results = self._run_search(q, limit=30)
+        else:
+            results = [r.as_dict() for r in search_bundle(self.bundle, q, mode=search_mode, limit=30)]
         if want_json:
             return self._send_json(200, results)
         html = _render_search_page(
             self.bundle, mode="serve", name=self.display_name,
-            config=self._config(), query=q, results=results,
+            config=self._config(), query=q, results=results, search_mode=mode,
         )
         self._send_text(200, html)
 
@@ -1398,16 +1353,20 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
             "doc_revs": self._compute_doc_revs(),
         }
         self._sse_write(ready_payload)
+        last_heartbeat = time.monotonic()
+        stop_event = getattr(self.server, "stop_event", threading.Event())
         try:
-            while True:
+            while not stop_event.is_set():
                 try:
-                    event = q.get(timeout=15.0)
+                    event = q.get(timeout=1.0)
                 except queue.Empty:
                     # Heartbeat keeps proxies from timing the idle stream out.
                     # Naming the heartbeat ``type=ping`` lets the client count
                     # it as "stream alive" for its polling-watchdog grace
                     # (§7.3 INTENT-004 fix).
-                    self._sse_write({"type": "ping"}, comment="ping")
+                    if time.monotonic() - last_heartbeat >= 15:
+                        self._sse_write({"type": "ping"}, comment="ping")
+                        last_heartbeat = time.monotonic()
                     continue
                 if event.get("type") == "resync":
                     self._sse_write({
@@ -1971,25 +1930,26 @@ def write_server_state(server: Any, studio: "Studio | None") -> None:
         pass
 
 
-def run_server(
+@isolated_server_factory
+def create_server(
     bundle_root: str | Path,
     *,
     host: str = "127.0.0.1",
     port: int = 8787,
     watch: bool = True,
-    open_browser: bool = True,
+    open_browser: bool = False,
     name: str | None = None,
     allow_active_code: bool | None = None,
     studio_edit: bool = True,
     studio_live: bool = True,
     tunnel: bool = False,
-) -> None:
-    """Serve an OKF bundle as a live wiki. Blocks until Ctrl-C.
+    allow_network: bool = False,
+) -> StudioServer:
+    """Create a bound, unstarted studio for an embedding host.
 
-    Loads the bundle on startup, optionally watches ``.md`` files for changes
-    (reloads in a background thread), optionally opens the default browser,
-    and prints a startup banner. KeyboardInterrupt at the top of this
-    function triggers a clean shutdown.
+    Use as a context manager or call start()/close(). Port zero selects an
+    available port. The factory opens no browser and owns no agent process.
+    ``open_browser`` is accepted for source compatibility but has no effect.
 
     current studio (docs-bundle/reference/spec.md): by default the full live collaborative
     studio is on — SSE push, commenting/directing, agent enrichment.
@@ -2010,12 +1970,10 @@ def run_server(
     handler that needs more than one of those snapshots them once under the
     same lock (``_state_snapshot``).
     """
+    if host not in ("127.0.0.1", "localhost", "::1") and not allow_network:
+        raise ValueError("non-loopback embedding requires allow_network=True")
     bundle_root = Path(bundle_root).resolve()
 
-    # Operator consent: an explicit CLI argument wins over the env var.
-    if allow_active_code is not None:
-        from .viewer.assets import set_operator_consent
-        set_operator_consent(bool(allow_active_code))
     # effective_allow drives the warning + the plugin build.
     effective = effective_allow_active_code(bundle_root)
 
@@ -2076,7 +2034,7 @@ def run_server(
             file=sys.stderr,
         )
 
-    server = ThreadingHTTPServer((host, port), OKFWikiHandler)
+    server = StudioServer((host, port), OKFWikiHandler)
     server.bundle = bundle  # type: ignore[attr-defined]
     server.config = config  # type: ignore[attr-defined]
     server.name = name or config.get("name") or bundle.name  # type: ignore[attr-defined]
@@ -2246,7 +2204,6 @@ def run_server(
                 pass
 
         watcher = _BundleWatcher(bundle_root, _reload, interval=1.0, tick_fn=_tick)
-        watcher.start()
 
     # --tunnel: public sharing without touching the bind or the
     # bundle config. The tunnel hostname joins allowed_hosts at runtime so
@@ -2287,43 +2244,31 @@ def run_server(
     # --tunnel start records its URL too.
     write_server_state(server, studio)
 
-    print(
-        f"Serving OKF bundle '{display_name}' at http://{host}:{port}/  "
-        f"(Ctrl-C to stop)",
-        flush=True,
-    )
-    if tunnel_url:
-        print(f"Public tunnel: {tunnel_url}/  (dies with this process)", flush=True)
+    server.watcher = watcher
+    return server
 
-    if open_browser:
-        url = f"http://{host}:{port}/"
-        threading.Thread(
-            target=lambda: (time.sleep(0.4), webbrowser.open(url)),
-            daemon=True,
-        ).start()
 
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        # Clean shutdown: don't re-raise (the brief says to handle Ctrl-C at
-        # the top of run_server; embedding harnesses can catch this exit).
-        pass
-    finally:
-        if watcher is not None:
-            watcher.stop()
-        # The tunnel may have been attached at startup (--tunnel) OR at
-        # runtime (POST /__tunnel); either way it lives on the server
-        # object and dies with this process.
-        live_tunnel = getattr(server, "tunnel_proc", None)
-        if live_tunnel is not None:
-            try:
-                live_tunnel.terminate()
-            except OSError:
-                pass
-        if studio is not None:
-            try:
-                studio.server_state_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        server.shutdown()
-        server.server_close()
+def run_server(
+    bundle_root: str | Path, *, host: str = "127.0.0.1", port: int = 8787,
+    watch: bool = True, open_browser: bool = True, name: str | None = None,
+    allow_active_code: bool | None = None, studio_edit: bool = True,
+    studio_live: bool = True, tunnel: bool = False,
+) -> None:
+    """Compatibility CLI entrypoint; the embeddable factory owns setup/cleanup."""
+    with create_server(
+        bundle_root, host=host, port=port, watch=watch, name=name,
+        allow_active_code=allow_active_code, studio_edit=studio_edit,
+        studio_live=studio_live, tunnel=tunnel,
+        # CLI performs its explicit --public-ack gate before calling us.
+        allow_network=host not in ("127.0.0.1", "localhost", "::1"),
+    ) as server:
+        print(f"Serving OKF bundle '{server.name}' at {server.url}/  (Ctrl-C to stop)", flush=True)
+        if server.tunnel_url:
+            print(f"Public tunnel: {server.tunnel_url}/  (dies with this process)", flush=True)
+        if open_browser:
+            webbrowser.open(server.url + "/")
+        try:
+            while server._thread.is_alive():
+                server._thread.join(timeout=0.5)
+        except KeyboardInterrupt:
+            pass

@@ -34,6 +34,9 @@ See ``viewer/OVERRIDES.md`` for the full override reference.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 import json
 import os
 import re
@@ -84,6 +87,32 @@ _TRUTHY_OPERATOR_TOKENS: frozenset[str] = frozenset({"1", "true", "yes"})
 _operator_consent_override: bool | None = None
 
 
+_scoped_consent: ContextVar[bool | None] = ContextVar("okf_operator_consent", default=None)
+
+
+@contextmanager
+def operator_scope(granted: bool | None):
+    """Isolate an embedding host's active-code choice from other servers."""
+    token = _scoped_consent.set(granted)
+    try:
+        yield
+    finally:
+        _scoped_consent.reset(token)
+
+
+def isolated_server_factory(factory):
+    @wraps(factory)
+    def wrapped(*args, **kwargs):
+        granted = kwargs.get("allow_active_code")
+        if granted is None:
+            granted = operator_consent()
+        with operator_scope(bool(granted)):
+            server = factory(*args, **kwargs)
+        server.operator_consent = bool(granted)
+        return server
+    return wrapped
+
+
 def set_operator_consent(granted: bool) -> None:
     """Record an explicit operator-consent decision (CLI ``--allow-active-code``).
 
@@ -106,6 +135,9 @@ def operator_consent() -> bool:
     This is fail-closed: an unset env var, an empty string, ``"0"``,
     ``"false"``, or an unrecognised token all yield ``False``.
     """
+    scoped = _scoped_consent.get()
+    if scoped is not None:
+        return scoped
     if _operator_consent_override is not None:
         return _operator_consent_override
     raw = os.environ.get(OPERATOR_CONSENT_ENV, "")
@@ -155,7 +187,7 @@ def effective_allow_active_code(bundle_root: str | Path | Bundle) -> bool:
 # for the reloaded root so a config edit + .md touch is picked up on the
 # next request. A pure config edit (no .md touch) requires a server
 # restart, matching the existing watcher contract documented in run_server.
-_OVERRIDES_CACHE: dict[str, bool] = {}
+_OVERRIDES_CACHE: dict[tuple[str, bool], bool] = {}
 
 
 def clear_overrides_cache(bundle_root: str | Path | None = None) -> None:
@@ -168,7 +200,8 @@ def clear_overrides_cache(bundle_root: str | Path | None = None) -> None:
         _OVERRIDES_CACHE.clear()
         return
     key = str(Path(bundle_root).resolve())
-    _OVERRIDES_CACHE.pop(key, None)
+    _OVERRIDES_CACHE.pop((key, False), None)
+    _OVERRIDES_CACHE.pop((key, True), None)
 
 
 # ---------------------------------------------------------------------------
@@ -595,6 +628,7 @@ def _overrides_allowed(bundle: Bundle) -> bool:
         # If the root cannot be resolved (shouldn't happen for a loaded
         # bundle), fall back to the raw path string but still compute.
         key = str(bundle.root)
+    key = (key, operator_consent())
     cached = _OVERRIDES_CACHE.get(key)
     if cached is not None:
         return cached
