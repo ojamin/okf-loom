@@ -115,3 +115,19 @@ and no unsupported claim that all environments or integrations were tested.
 
 Completion requires working code and verification, not only this plan. Any
 unfinished acceptance gate remains explicitly unfinished in the delivery notes.
+
+## 8. Meridian export and reading refinement
+
+The follow-up preserves the intent inventory while addressing the actual CI
+screenshots: document-first reading, accessible context disclosure and toolbar
+reflow. Meridian receives a native board view, item tab and dashboard widget
+through its supported plugin contracts. Full-source edits must retain unknown
+fields and use mandatory revision checks. Plugin networking must use the
+granted host bridge; credentials stay in frame memory. Exported directories
+must match the real loader and validate against the real SDK.
+
+Acceptance covers read/search/edit/comment/resolve/undo, mobile layout,
+cleanup, conflict handling and installable package structure. Browser tests
+against a host double prove Loom behavior only. Installed-host acceptance and
+complete specialized-renderer parity remain separate claims requiring direct
+evidence; they cannot be inferred from manifest validation.

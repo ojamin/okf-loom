@@ -4,7 +4,7 @@
 set -e
 DIR="$(cd "$(dirname "$0")/.." && pwd)/scripts/okf_loom/viewer/static"
 FAILED=0
-for f in "$DIR"/*.js; do
+for f in "$DIR"/*.js "$DIR"/../../../../plugins/meridian/*.js; do
   if ! node --check "$f" 2>/dev/null; then
     echo "FAIL: $f"
     node --check "$f" 2>&1 | head -5

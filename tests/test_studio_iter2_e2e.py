@@ -222,6 +222,91 @@ def page(request):
 # ---------------------------------------------------------------------------
 
 
+def test_reading_context_and_toolbar_reflow(page, server_url):
+    page.goto(server_url + '/tables/orders')
+    _wait_for_studio(page)
+    context = page.locator('.okf-context')
+    assert not context.evaluate('(el) => el.open')
+    assert page.locator('.okf-page__body').bounding_box()['y'] < 650
+    evidence = TOOLKIT_ROOT / 'test-results' / 'reading-layout'
+    evidence.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(evidence / 'desktop.png'))
+    context.locator('summary').first.click()
+    expect(page.locator('.okf-page__sidebar')).to_be_visible()
+    context.locator('summary').first.click()
+    page.set_viewport_size({'width':390,'height':844})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    for control in page.locator('.okf-studio-bar button').all():
+        if control.is_visible():
+            bounds = control.bounding_box()
+            assert bounds['x'] >= 0 and bounds['x'] + bounds['width'] <= 391
+    page.screenshot(path=str(evidence / 'mobile.png'))
+
+
+def test_meridian_workspace_with_real_loom_api(page, server_url, e2e_bundle, tmp_path):
+    """Real React + browser + Loom; explicit Meridian host double, not host E2E."""
+    from urllib.parse import urlsplit
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError
+    bundle_js = tmp_path / 'meridian-harness.js'
+    subprocess.run(['node','tests/build-meridian-harness.mjs',str(bundle_js)],
+                   cwd=str(TOOLKIT_ROOT), check=True, timeout=30)
+    def relay(request):
+        url = urlsplit(request['url'])
+        assert url.scheme == 'https' and url.hostname == 'loom.example.com'
+        local = server_url + url.path + ('?' + url.query if url.query else '')
+        body = request.get('body')
+        req = Request(local, data=body.encode() if body is not None else None,
+                      headers=request.get('headers',{}), method=request.get('method','GET'))
+        try:
+            response = urlopen(req, timeout=10)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            return {'status':response.status,'statusText':'','headers':{},'body':response.read().decode()}
+    page.expose_function('loomTestFetch',relay)
+    page.route('https://plugin.example.test/**', lambda route: route.fulfill(
+        status=200, content_type='text/javascript' if route.request.url.endswith('.js') else 'text/html',
+        body=bundle_js.read_text() if route.request.url.endswith('.js') else
+        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><div id="root"></div><script type="module" src="/app.js"></script></body></html>'))
+    page.goto('https://plugin.example.test/')
+    expect(page.get_by_role('heading',name='Orders',exact=True)).to_be_visible(timeout=15000)
+    page.get_by_role('button',name='Connect editing',exact=True).click()
+    token = _run_okl(e2e_bundle,'token',str(e2e_bundle)).stdout.strip()
+    assert token
+    page.get_by_label('Loom session token').fill(token)
+    page.get_by_role('button',name='Connect',exact=True).click()
+    expect(page.get_by_role('button',name='Editing connected')).to_be_visible()
+    page.get_by_role('button',name='Edit source',exact=True).click()
+    source = page.get_by_label('Markdown source')
+    original = source.input_value()
+    source.fill(original + '\nMeridian browser acceptance passage.\n')
+    page.get_by_role('button',name='Save source',exact=True).click()
+    expect(page.locator('.loom-prose')).to_contain_text('Meridian browser acceptance passage.')
+    assert 'Meridian browser acceptance passage.' in (e2e_bundle/'tables/orders.md').read_text()
+    page.get_by_role('button',name='Comments',exact=True).click()
+    page.get_by_label('Instruction or comment').fill('Check the Meridian integration.')
+    page.get_by_role('button',name='Post comment',exact=True).click()
+    expect(page.get_by_label('Instruction or comment')).to_have_value('')
+    expect(page.get_by_text('Check the Meridian integration.',exact=True)).to_be_visible()
+    thread = page.locator('.loom-card').filter(has=page.get_by_text('Check the Meridian integration.',exact=True))
+    thread.get_by_label('Resolution summary').fill('Integration checked.')
+    thread.get_by_role('button',name='Resolve',exact=True).click()
+    expect(thread.get_by_role('button',name='Reopen',exact=True)).to_be_visible()
+    page.get_by_role('button',name='Changes',exact=True).click()
+    page.get_by_role('button',name='Undo',exact=True).first.click()
+    page.get_by_role('button',name='Read',exact=True).click()
+    expect(page.locator('.loom-prose')).not_to_contain_text('Meridian browser acceptance passage.')
+    evidence = TOOLKIT_ROOT/'test-results'/'meridian-workspace'
+    evidence.mkdir(parents=True,exist_ok=True)
+    page.screenshot(path=str(evidence/'desktop.png'))
+    page.set_viewport_size({'width':390,'height':844})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    page.screenshot(path=str(evidence/'mobile.png'))
+    page.evaluate('window.loomTestUnmount()')
+    assert page.evaluate('window.loomTestDisposed === true')
+
+
 def _wait_for_studio(pg) -> None:
     """Block until studio.js has booted (window.okfLoomStudio defined).
 

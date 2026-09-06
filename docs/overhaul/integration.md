@@ -24,9 +24,25 @@ is independent of OKF format v0.1 and the runtime version.
 | Node or another backend | REST JSON contract and cursor-polling feed | Host owns retries, authentication storage and any protocol translation. |
 | Search/retrieval pipeline | `Bundle`, `ContentIndex`, `search_bundle`, or exported content JSON | Uses the same index as the viewer. |
 | Documentation hosting | Existing static, SPA, or single-file exports | No live server or token required. |
+| Meridian | Exported board/item/dashboard plugin using the host network bridge | Host owns installation and network grants; Loom owns documents, tokens and agent processes. |
 | MCP/IDE/other ecosystem adapter | Translate host tools to the existing CLI/client operations | Adapter supplies protocol-specific discovery and authorization. No bundled MCP server is claimed. |
 
 ## Python host
+
+For Meridian export, run `python scripts/export_meridian.py --help` and read
+the checkout's `plugins/meridian/README.md`. It documents the tested manifest
+contract, deployment layout, credential lifecycle and rendering boundaries.
+An export is not evidence of installation in a running Meridian deployment.
+
+Exact-source clients may call `POST /__save` with `id`, `source` and mandatory
+`expected_rev`: the revision returned by `GET /__data/doc`, or explicit JSON
+`null` to create only if the file is absent. The document response now includes
+`source` (the complete Markdown file) alongside the existing body-only `raw`.
+The save preserves supplied bytes, requires valid frontmatter and a non-empty
+type, protects reserved paths, and rejects broken references unless
+`allow_forward_reference: true` is explicit. A stale revision returns 409
+without changing the file. It uses the same attributed history and undo funnel
+as other writes; an absent-file snapshot restores absence, not an empty file.
 
 From a checkout, add its `scripts` directory to the host's import path:
 
