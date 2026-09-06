@@ -1129,6 +1129,27 @@
   padding: var(--okf-space-3) var(--okf-space-4);
   min-height: 0;
 }
+
+/* Workspace overhaul: a calm, readable directing surface. All colors remain
+   theme tokens; panel semantics, focus trap and extension slots stay intact. */
+.okf-studio-bar { padding: 10px 24px; min-height: 52px; background: var(--okf-bg-elev); }
+.okf-studiobtn, .okf-iconbtn { min-height: 36px; }
+.okf-studiobtn[aria-expanded="true"] { border-color: var(--okf-accent); background: var(--okf-accent-bg); color: var(--okf-accent); }
+.okf-panel { width: min(480px, 100vw); box-shadow: -8px 0 32px rgba(0,0,0,.1); }
+.okf-panel__header { padding: 20px 24px; min-height: 64px; box-sizing: border-box; }
+.okf-panel__title { font-family: var(--okf-font-display); font-size: 24px; }
+.okf-panel__body { padding: 20px 24px; overscroll-behavior: contain; }
+.okf-composer { padding: 16px; border: 1px solid var(--okf-border); border-radius: var(--okf-radius); background: var(--okf-bg); }
+.okf-composer__textarea { min-height: 112px; font-size: 15px; line-height: 1.65; }
+.okf-composer__actions { flex-wrap: wrap; }
+.okf-composer__hint { line-height: 1.7; }
+@media (max-width: 720px) {
+  .okf-studio-bar { padding: 12px 16px; flex-wrap: wrap; gap: 12px; }
+  .okf-studio-bar__group { flex-wrap: wrap; }
+  .okf-studiobtn, .okf-iconbtn, .okf-viewswitch__btn { min-height: 44px; }
+  .okf-panel__header, .okf-panel__body { padding: 16px; }
+  .okf-panel { height: 100dvh; }
+}
 .okf-panel__section { margin-bottom: var(--okf-space-4); }
 /* iter3 CRI3-007: a quiet "View full history in Changes" link at the
  * foot of the agent-activity panel's Recent-writes section. Reads as a

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .aliases import alias_labels
+from .viewer.workspace import navigation, workspace_assets
 from .model import Bundle, Concept
 from .paths import ConceptId, concept_id_to_str
 from .viewer.assets import (
@@ -587,6 +588,7 @@ def _nav_controls_html(
     initial_theme: str,
     current_query: str = "",
     mode: str = "serve",
+    search_mode: str | None = None,
 ) -> str:
     """Shared topbar controls fragment (P2-61).
 
@@ -605,12 +607,22 @@ def _nav_controls_html(
     )
     index_href = root_prefix or "./"
     search_target = f"{root_prefix}__search{'.html' if mode == 'static' else ''}"
+    mode_control = ""
+    if mode == "serve" and search_mode is not None:
+        choices = [("lexical", "Words"), ("semantic", "Similar wording"),
+                   ("hybrid", "Combined"), ("tag", "Tags"),
+                   ("entity", "Entities"), ("relation", "Relations")]
+        options = "".join(f'<option value="{value}"' +
+                          (' selected' if value == search_mode else '') +
+                          f'>{label}</option>' for value, label in choices)
+        mode_control = ('<select name="mode" aria-label="Search method">' + options +
+                        '</select><button type="submit">Search</button>')
     return (
         '<div class="okf-topbar__controls">'
         f'<form action="{search_target}" method="get" role="search" class="okf-search-form">'
         '<input type="search" name="q" placeholder="Search\u2026" autocomplete="off"'
         f' aria-label="Search"{search_value}>'
-        '</form>'
+        f'{mode_control}</form>'
         f'<a class="okf-btn" href="{graph_link}">Graph</a>'
         f'<a class="okf-btn" href="{index_href}">Index</a>'
         f'{_theme_button_html(initial_theme)}'
@@ -1440,6 +1452,7 @@ def _render_concept_page(
 
     rendered = (
         template
+        .replace("__WORKSPACE_NAV__", navigation(bundle, mode=mode, root_prefix=root_prefix))
         .replace("__LANG__", "en")
         .replace("__THEME_ATTR__", theme_attr)
         .replace("__DATA_ATTRS__", data_attrs)
@@ -1456,7 +1469,7 @@ def _render_concept_page(
         # P1-9: local-graph pill nav reads data-root-prefix to build the
         # target URL. Only consumed by wiki.js in static mode.
         .replace("__ROOT_PREFIX__", _esc_attr_qs(root_prefix))
-        .replace("__WIKI_CSS_LINK__", css_link)
+        .replace("__WIKI_CSS_LINK__", css_link + workspace_assets(static_prefix))
         .replace("__WIKI_JS_LINK__", js_link)
         .replace("__RENDERERS_JS_LINK__", renderers_link)
         .replace("__CONCEPT_ID__", _esc(cid_str))
@@ -2096,6 +2109,7 @@ def _render_index_page(
 
     return (
         template
+        .replace("__WORKSPACE_NAV__", navigation(bundle, mode=mode, root_prefix=("../" * len(sub_parts) if mode == "static" else "/")))
         .replace("__LANG__", "en")
         .replace("__THEME_ATTR__", theme_attr)
         .replace("__DATA_ATTRS__", data_attrs)
@@ -2104,7 +2118,7 @@ def _render_index_page(
         .replace("__BRAND_HREF__", _esc_attr_qs(brand_href))
         .replace("__BRAND_ARIA_CURRENT__", brand_aria)
         .replace("__STATIC_PREFIX__", static_prefix)
-        .replace("__WIKI_CSS_LINK__", css_link)
+        .replace("__WIKI_CSS_LINK__", css_link + workspace_assets(static_prefix))
         .replace("__WIKI_JS_LINK__", js_link)
         .replace("__RENDERERS_JS_LINK__", renderers_link)
         .replace("__NAV_HTML__", nav_html)
@@ -2124,6 +2138,7 @@ def _render_search_page(
     name: str,
     config: dict[str, Any],
     query: str,
+    search_mode: str = "lexical",
     results: list[dict[str, Any]],
 ) -> str:
     template = load_template("search_page.html", bundle)
@@ -2207,6 +2222,7 @@ def _render_search_page(
         graph_link=graph_link,
         initial_theme=initial_theme,
         current_query=query,
+        search_mode=search_mode,
         mode=mode,
     )
 
@@ -2222,13 +2238,14 @@ def _render_search_page(
 
     return (
         template
+        .replace("__WORKSPACE_NAV__", navigation(bundle, mode=mode, root_prefix=root_prefix_for_nav))
         .replace("__LANG__", "en")
         .replace("__THEME_ATTR__", theme_attr)
         .replace("__DATA_ATTRS__", data_attrs)
         .replace("__HEAD_TITLE__", _esc(f"Search: {query} — {name}"))
         .replace("__BUNDLE_NAME__", _esc(name))
         .replace("__STATIC_PREFIX__", static_prefix)
-        .replace("__WIKI_CSS_LINK__", css_link)
+        .replace("__WIKI_CSS_LINK__", css_link + workspace_assets(static_prefix))
         .replace("__WIKI_JS_LINK__", js_link)
         .replace("__RENDERERS_JS_LINK__", renderers_link)
         .replace("__SEARCH_DATA_INLINE__", search_data_inline)
@@ -2295,13 +2312,14 @@ def _render_graph_page(
 
     return (
         template
+        .replace("__WORKSPACE_NAV__", navigation(bundle, mode=mode, root_prefix=("./" if mode == "static" else "/")))
         .replace("__LANG__", "en")
         .replace("__THEME_ATTR__", theme_attr)
         .replace("__DATA_ATTRS__", data_attrs)
         .replace("__HEAD_TITLE__", _esc(f"Graph — {name}"))
         .replace("__BUNDLE_NAME__", _esc(name))
         .replace("__STATIC_PREFIX__", static_prefix)
-        .replace("__WIKI_CSS_LINK__", css_link)
+        .replace("__WIKI_CSS_LINK__", css_link + workspace_assets(static_prefix))
         .replace("__GRAPH_CSS_LINK__", graph_css_link)
         .replace("__GRAPH_JS_SRC__", graph_js)
         .replace("__CDN_SCRIPTS__", cdn_scripts)

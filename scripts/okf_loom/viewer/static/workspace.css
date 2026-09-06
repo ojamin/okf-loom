@@ -1,0 +1,94 @@
+/* Workspace composition. Existing theme tokens and document semantics remain
+   the public customization contract; no new palette or webfont dependency. */
+.okf-viewer { --okf-topbar-h: 64px; --okf-nav-w: 212px; }
+.okf-topbar { min-height: var(--okf-topbar-h); height: auto; padding: 10px 24px; gap: 24px; }
+.okf-topbar__brand { flex-direction: column; align-items: flex-start; gap: 0; }
+.okf-topbar__brand .okf-muted { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+.okf-topbar__controls { min-width: 0; }
+.okf-topbar__controls input[type="search"] { width: clamp(180px, 24vw, 340px); min-height: 40px; background: var(--okf-bg); }
+.okf-topbar__controls .okf-btn, .okf-topbar__controls button { min-height: 40px; display: inline-flex; align-items: center; }
+.okf-search-note { display: none !important; }
+.okf-workspace-nav { position: fixed; inset: var(--okf-topbar-h) auto 0 0; width: var(--okf-nav-w); padding: 24px 16px; box-sizing: border-box; border-right: 1px solid var(--okf-border); background: var(--okf-bg-elev); overflow-y: auto; z-index: 8; }
+.okf-workspace-nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 6px 12px; box-sizing: border-box; color: var(--okf-fg-muted); border-radius: var(--okf-radius); font-size: 14px; text-decoration: none; overflow-wrap: anywhere; }
+.okf-workspace-nav a:hover { background: var(--okf-bg-inset); color: var(--okf-fg); }
+.okf-workspace-nav a[aria-current="page"] { background: var(--okf-accent-bg); color: var(--okf-accent); font-weight: 650; }
+.okf-workspace-nav__label { display: block; padding: 8px 12px; margin-top: 20px; color: var(--okf-fg-muted); font-size: 10px; letter-spacing: .12em; font-weight: 700; }
+.okf-workspace-nav__label:first-child { margin-top: 0; }
+.okf-workspace-nav__folder span { font-size: 11px; font-variant-numeric: tabular-nums; }
+.okf-workspace-nav__foot { border-top: 1px solid var(--okf-border); margin: 32px 12px 0; padding-top: 16px; color: var(--okf-fg-muted); font-size: 12px; line-height: 1.6; }
+body:has(.okf-workspace-nav) > .okf-studio-bar { margin-left: var(--okf-nav-w); }
+body:has(.okf-workspace-nav) > main { width: calc(100% - var(--okf-nav-w)); margin-left: var(--okf-nav-w); box-sizing: border-box; }
+.okf-index, .okf-search { max-width: none; padding: 40px clamp(24px, 4vw, 64px) 72px; }
+.okf-hero { border-bottom: 1px solid var(--okf-border); padding-bottom: 28px; margin-bottom: 24px; }
+.okf-index__title, .okf-search__title { margin: 0 0 20px; letter-spacing: -.035em; font-size: clamp(30px, 3vw, 44px); }
+.okf-workspace-eyebrow { margin: 0 0 8px; color: var(--okf-accent); font-size: 11px; letter-spacing: .14em; font-weight: 700; text-transform: uppercase; }
+.okf-workspace-summary { color: var(--okf-fg-muted); margin: -8px 0 24px; max-width: 68ch; }
+.okf-hero__stats { margin: 16px 0 0; gap: 12px; }
+.okf-stat { background: transparent; border: 0; padding: 0 16px 0 0; border-right: 1px solid var(--okf-border); font-size: 12px; }
+.okf-stat strong { font-size: 20px; font-weight: 600; margin-right: 4px; color: var(--okf-fg); }
+.okf-bundle-about { margin-top: 24px; border-top: 1px solid var(--okf-border); padding-top: 16px; }
+.okf-bundle-about > summary { color: var(--okf-accent); cursor: pointer; font-weight: 600; font-size: 14px; min-height: 32px; }
+.okf-bundle-about .okf-index__intro { margin-top: 16px; max-width: 76ch; }
+.okf-subdirs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; }
+.okf-subdirs a { padding: 8px 12px; display: flex; gap: 12px; align-items: center; border: 1px solid var(--okf-border); border-radius: var(--okf-radius); background: var(--okf-bg-elev); }
+.okf-subdirs strong { font-size: 13px; font-weight: 550; }
+.okf-subdirs .okf-muted { display: none; }
+.okf-catalog-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 28px; }
+.okf-catalog-tools[hidden], .okf-index [hidden] { display: none !important; }
+.okf-catalog-tools label { font-size: 14px; font-weight: 600; }
+.okf-catalog-tools input { flex: 1; max-width: 380px; min-width: 150px; min-height: 42px; padding: 8px 12px; font: inherit; font-size: 14px; border: 1px solid var(--okf-border-strong); border-radius: var(--okf-radius); background: var(--okf-bg-elev); color: var(--okf-fg); }
+.okf-catalog-tools output { font-size: 12px; color: var(--okf-fg-muted); }
+.okf-section { margin: 0 0 28px; padding: 0; border: none; background: transparent; }
+.okf-section__title { font-family: inherit; font-size: 15px; letter-spacing: 0; margin-bottom: 12px; }
+.okf-cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 12px; }
+.okf-card { min-height: 146px; display: flex; flex-direction: column; padding: 20px; border: 1px solid var(--okf-border); border-radius: var(--okf-radius); background: var(--okf-bg-elev); box-shadow: none; transition: border-color .15s, box-shadow .15s; }
+.okf-card:hover { transform: none; border-color: var(--okf-accent); box-shadow: var(--okf-shadow); }
+.okf-card__link { font-size: 16px; font-weight: 600; line-height: 1.4; }
+.okf-card__id { font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
+.okf-card__desc { font-size: 13px; line-height: 1.65; margin-top: 12px; color: var(--okf-fg-muted); }
+.okf-card__meta { margin-top: auto; padding-top: 16px; }
+.okf-page { padding: 36px clamp(24px, 4vw, 64px) 72px; gap: 36px; }
+.okf-page__main { min-width: 0; }
+.okf-page__header { border: none; border-bottom: 1px solid var(--okf-border); border-radius: 0; background: transparent; padding: 0 0 28px; margin-bottom: 28px; box-shadow: none; }
+.okf-page__title { font-size: clamp(30px, 3vw, 44px); letter-spacing: -.035em; line-height: 1.15; }
+.okf-page__description { max-width: 65ch; font-size: 16px; line-height: 1.75; }
+.okf-page__body { max-width: 76ch; font-size: 16px; line-height: 1.85; }
+.okf-page__sidebar { border: 0; background: transparent; font-size: 13px; }
+.okf-page__meta { gap: 8px; }
+.okf-governed { font-size: 12px; }
+.okf-relations { border-top: 1px solid var(--okf-border); margin-top: 40px; padding-top: 24px; }
+.okf-viewer--graph .okf-workspace-nav { display: none; }
+.okf-viewer--graph:has(.okf-workspace-nav) > main { width: 100%; margin-left: 0; }
+.okf-viewer--graph:has(.okf-workspace-nav) > .okf-studio-bar { margin-left: 0; }
+.okf-viewer--graph .okf-detail { border-left: 1px solid var(--okf-border); }
+.okf-viewer[data-okf-mode="static"] .okf-studio-fallback-banner { display: none !important; }
+.okf-viewer :focus-visible { outline: 2px solid var(--okf-accent); outline-offset: 3px; }
+@media (max-width: 1000px) {
+  .okf-viewer { --okf-nav-w: 176px; }
+  .okf-page { display: block; }
+  .okf-page__sidebar { position: static; width: auto; max-width: none; margin-bottom: 24px; }
+  .okf-topbar__brand .okf-muted { display: none; }
+}
+@media (max-width: 720px) {
+  .okf-topbar { position: relative; flex-wrap: wrap; padding: 14px 16px; gap: 12px; }
+  .okf-topbar__controls { width: 100%; flex-wrap: wrap; }
+  .okf-topbar__controls input[type="search"] { width: 100%; min-width: 130px; }
+  .okf-search-form { display: flex; flex: 1; }
+  .okf-workspace-nav { position: static; width: 100%; padding: 8px 16px; display: flex; gap: 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--okf-border); flex-shrink: 0; }
+  .okf-workspace-nav a { flex-shrink: 0; min-height: 44px; }
+  .okf-workspace-nav__label, .okf-workspace-nav__folder, .okf-workspace-nav__foot { display: none !important; }
+  body:has(.okf-workspace-nav) > main { width: 100%; margin-left: 0; }
+  body:has(.okf-workspace-nav) > .okf-studio-bar { margin-left: 0; }
+  .okf-index, .okf-search, .okf-page { padding: 28px 20px 48px; }
+  .okf-catalog-tools label { width: 100%; }
+  .okf-hero__graph-link { margin-left: 0; }
+  .okf-cardgrid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .okf-card { transition: none; } }
+@media print {
+  .okf-workspace-nav, .okf-catalog-tools, .okf-workspace-eyebrow { display: none !important; }
+  body:has(.okf-workspace-nav) > main { margin: 0; width: 100%; }
+  .okf-bundle-about > .okf-index__intro { display: block; }
+  .okf-cardgrid { display: block; }
+  .okf-card { break-inside: avoid; min-height: 0; }
+}

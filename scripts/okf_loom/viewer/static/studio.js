@@ -1,3 +1,5 @@
+import { diffAndPatchBody } from "./document-patch.js";
+import { createClient } from "./client.js";
 /* OKF Studio - the studio UI (spec §8 / §9 / §12 / §13).
  *
  * Owns the presentation layer; live.js owns the SSE transport + the
@@ -57,6 +59,7 @@
   document.documentElement.classList.add("okf-studio-booted");
   const EDIT = BOOT.edit !== false; // read-only kiosk when false
   const TOKEN = BOOT.token || "";
+  const client = createClient({ token: TOKEN });
   const REDUCED_MOTION =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -308,7 +311,7 @@
     tokenFetch("/__presence", {
       method: "POST",
       body: { actor: "agent", state: nowOn ? "watching" : "idle" },
-    }).catch(() => {
+    }).then((response) => { if (!response.ok) throw new Error("Presence update failed"); }).catch(() => {
       // On network failure, revert the optimistic toggle.
       watchingToggle.setAttribute("aria-pressed", nowOn ? "false" : "true");
       toast("Could not update agent watching state.", { tone: "error" });
@@ -609,122 +612,6 @@
   // to diff their <li>/<tr> children, so "agent added one item to a list"
   // swaps only that item, not the whole list. Depth is capped at 2 so a
   // pathological nested structure can't blow the stack.
-  const BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,ul,ol,table,pre,blockquote,hr,div";
-  function blockChildren(parent) {
-    const out = [];
-    for (let n = parent.firstChild; n; n = n.nextSibling) {
-      if (n.nodeType === 1) out.push(n);
-    }
-    return out;
-  }
-  function blockSig(el) {
-    // Whitespace-collapsed text + tag + id (heading ids are stable anchors
-    // for comment marks; including them keeps a renamed heading "changed").
-    const tag = el.tagName.toLowerCase();
-    const id = el.getAttribute("id") || "";
-    // Mermaid/math blocks: after CDN rendering (mermaid.js, KaTeX), the
-    // element's textContent changes from the raw source to the rendered
-    // SVG/MathML output. Use the data attribute (the original source) for
-    // the signature so the diff treats "rendered" and "raw" versions of
-    // the SAME diagram as equal — preventing a visible flash-to-raw-text
-    // on live patches that don't actually change the diagram.
-    if (el.classList && (el.classList.contains("mermaid") || el.classList.contains("math"))) {
-      var source = el.getAttribute("data-source") || el.textContent || "";
-      return tag + "|" + id + "|" + source.replace(/\s+/g, " ").trim().slice(0, 200);
-    }
-    // Enhancement wrappers (renderers.js table/code UX): sign as the INNER
-    // block so an enhanced live table/pre compares equal to the bare
-    // server-rendered element on the other side of the diff. The tablewrap
-    // uses data-source (the original text captured at enhance time) because
-    // user-applied sorting reorders the live textContent without the
-    // content having changed. Full-length (no 200-char slice) on both the
-    // wrapper AND bare table/pre sides: a sorted table means row-level
-    // recursion can't reconcile order, so equality must be exact — a
-    // truncated signature would silently drop edits past the prefix.
-    if (el.classList && el.classList.contains("okf-tablewrap")) {
-      return "table|" + id + "|" + (el.getAttribute("data-source") || "");
-    }
-    if (el.classList && el.classList.contains("okf-codewrap")) {
-      var inner = el.querySelector("pre");
-      var innerText = inner ? (inner.textContent || "") : "";
-      return "pre|" + id + "|" + innerText.replace(/\s+/g, " ").trim();
-    }
-    if (tag === "table" || tag === "pre") {
-      return tag + "|" + id + "|" + (el.textContent || "").replace(/\s+/g, " ").trim();
-    }
-    const text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200);
-    return tag + "|" + id + "|" + text;
-  }
-  function parseHtmlToBlocks(html) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html;
-    return blockChildren(tmp);
-  }
-  // Standard LCS DP over signature arrays → edit ops. Returns an array of
-  // {op: "keep"|"replace"|"insert"|"remove", oldEl?, newEl?}.
-  function lcsOps(oldBlocks, newBlocks) {
-    const n = oldBlocks.length, m = newBlocks.length;
-    const oldSigs = oldBlocks.map(blockSig);
-    const newSigs = newBlocks.map(blockSig);
-    // dp[i][j] = LCS length of oldSigs[i:] and newSigs[j:].
-    const dp = [];
-    for (let i = 0; i <= n; i++) dp.push(new Array(m + 1).fill(0));
-    for (let i = n - 1; i >= 0; i--) {
-      for (let j = m - 1; j >= 0; j--) {
-        dp[i][j] = oldSigs[i] === newSigs[j]
-          ? dp[i + 1][j + 1] + 1
-          : Math.max(dp[i + 1][j], dp[i][j + 1]);
-      }
-    }
-    const ops = [];
-    let i = 0, j = 0;
-    while (i < n && j < m) {
-      if (oldSigs[i] === newSigs[j]) { ops.push({ op: "keep", oldEl: oldBlocks[i], newEl: newBlocks[j] }); i++; j++; }
-      else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ op: "remove", oldEl: oldBlocks[i] }); i++; }
-      else { ops.push({ op: "insert", newEl: newBlocks[j] }); j++; }
-    }
-    while (i < n) { ops.push({ op: "remove", oldEl: oldBlocks[i] }); i++; }
-    while (j < m) { ops.push({ op: "insert", newEl: newBlocks[j] }); j++; }
-    return ops;
-  }
-  // diffAndPatchBody mutates `parent` to match `newHtml` at the block level.
-  // Returns the list of newly-inserted or replaced element nodes (for the
-  // scoped pulse). Recurses into matching list/table blocks that differ.
-  function diffAndPatchBody(parent, newHtml) {
-    const newBlocks = parseHtmlToBlocks(newHtml);
-    return diffChildren(parent, newBlocks, 0);
-  }
-  function diffChildren(parent, newBlocks, depth) {
-    const oldBlocks = blockChildren(parent);
-    const ops = lcsOps(oldBlocks, newBlocks);
-    const changed = [];
-    // Apply ops. We rebuild the child list by walking ops and using
-    // parent.insertBefore / removeChild so untouched nodes keep their
-    // identity (and any in-body selection/focus on them survives).
-    let cursor = parent.firstChild; // node we're currently considering in the live DOM
-    for (let k = 0; k < ops.length; k++) {
-      const op = ops[k];
-      if (op.op === "keep") {
-        // Recurse into matching containers whose children may differ.
-        if (depth < 2 && (op.oldEl.tagName === "UL" || op.oldEl.tagName === "OL" || op.oldEl.tagName === "TABLE")) {
-          const innerChanged = diffChildren(op.oldEl, blockChildren(op.newEl), depth + 1);
-          if (innerChanged.length) { changed.push.apply(changed, innerChanged); }
-        }
-        cursor = op.oldEl.nextSibling;
-      } else if (op.op === "replace") {
-        // (Not produced by lcsOps directly; handled as remove+insert.)
-      } else if (op.op === "remove") {
-        const next = op.oldEl.nextSibling;
-        parent.removeChild(op.oldEl);
-        cursor = next;
-      } else if (op.op === "insert") {
-        const imported = parent.ownerDocument.importNode(op.newEl, true);
-        parent.insertBefore(imported, cursor);
-        changed.push(imported);
-      }
-    }
-    return changed;
-  }
   function pulseBlocks(blocks) {
     if (REDUCED_MOTION) return;
     blocks.forEach((b) => {
@@ -807,12 +694,9 @@
       // /__comments (directives.jsonl, last-write-wins) instead of
       // reconstructing from /__data/events (which had a desc-order +
       // last-iteration inversion bug showing claimed/resolved as "open").
-      const [commentRes, eventRes] = await Promise.all([
-        fetch("/__comments", { headers: { Accept: "application/json" } }),
-        fetch("/__data/events?limit=500", { headers: { Accept: "application/json" } }),
+      const [commentData, eventData] = await Promise.all([
+        client.comments(), client.request("/__data/events", { query: { limit: 500 } }),
       ]);
-      const commentData = await commentRes.json();
-      const eventData = await eventRes.json();
       // State-ownership fence (async-lifecycle): live SSE events may have been
       // upserted into state.events WHILE this initial fetch was in flight — a
       // slow /__data/events response must NOT wipe a live burst that already
@@ -848,6 +732,7 @@
       rebuildMarginMarkers();
     } catch (e) {
       console.error("[okf-studio] load comments/events failed", e);
+      toast("Comments and activity could not load. Reopen the panel to retry.", { tone: "error", ttl: 7000 });
     }
   }
   function byTsDesc(a, b) {
@@ -1289,6 +1174,7 @@
   async function postCommentFromComposer(textarea, submit, refreshAnchor) {
     const body = (textarea.value || "").trim();
     if (!body) { textarea.focus(); return; }
+    if (state._postingComment) return;
     if (!EDIT) { toast("Commenting is disabled (read-only studio).", { tone: "error" }); return; }
     const anchor = state.draftAnchor || { kind: "concept", ref: state.conceptId };
     // The anchor's concept wins over state.conceptId: on the graph page
@@ -1298,6 +1184,7 @@
     // state.conceptId there would file the comment against a nonexistent
     // concept.
     const concept = anchor.concept || state.conceptId;
+    state._postingComment = true;
     var parentForPost = state.replyTo || null;
     state.replyTo = null; // clear after capturing
     // Optimistic: insert a local "posting" comment immediately. The id is
@@ -1318,12 +1205,14 @@
     refreshAnchor();
     submit.disabled = true; submit.textContent = "Sending…";
     try {
-      const res = await tokenFetch("/__comment", {
-        method: "POST",
-        body: { concept, body, anchor, actor: "user", detail: {}, parent_id: parentForPost || null },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+      const requestBody = { concept, body, anchor, actor: "user", detail: {}, parent_id: parentForPost || null };
+      const fingerprint = JSON.stringify(requestBody);
+      if (!state._commentRetry || state._commentRetry.fingerprint !== fingerprint) {
+        state._commentRetry = { fingerprint, key: "comment-" + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2)) };
+      }
+      const data = await client.comment(requestBody, { idempotencyKey: state._commentRetry.key });
+      if (!data.ok) throw new Error(data.error || "Comment was not accepted");
+      state._commentRetry = null;
       // Drop the optimistic row, then upsert the server-confirmed record by
       // id (handles the SSE race that may have inserted it already).
       const confirmed = data.comment || {};
@@ -1342,9 +1231,14 @@
       renderCommentsPanel(); updateBadges(); applyCommentMarks(); rebuildMarginMarkers();
       // iter1 CRI-009: em dash replaced with a period.
       toast("Comment failed: " + (e.message || e) + ". Your text is still in the composer.", { tone: "error", ttl: 7000 });
-      textarea.value = body; state.draftBody = body;
-      state.draftAnchor = anchor; refreshAnchor();
+      state.draftBody = body;
+      state.draftAnchor = anchor;
+      state.replyTo = parentForPost;
+      renderCommentsPanel();
+      const restored = document.querySelector(".okf-composer__textarea");
+      if (restored) { restored.value = body; restored.focus(); }
     } finally {
+      state._postingComment = false;
       submit.disabled = false; submit.textContent = "Send";
     }
   }

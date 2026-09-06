@@ -1654,3 +1654,6 @@ details.okf-frontmatter th { background: var(--okf-bg-inset); }
   * { animation: none !important; transition: none !important; }
   .okf-skip-link { transition: none; }
 }
+
+/* Static output is a deliberate product mode, including without JavaScript. */
+body[data-okf-mode="static"] .okf-studio-fallback-banner { display: none; }

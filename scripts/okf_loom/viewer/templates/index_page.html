@@ -35,10 +35,11 @@ __WIKI_CSS_LINK__
 <header class="okf-topbar">
   <div class="okf-topbar__brand">
     <a href="__BRAND_HREF__" class="okf-brand-link"__BRAND_ARIA_CURRENT__><strong>__BUNDLE_NAME__</strong></a>
-    <span class="okf-muted">okf-loom wiki</span>
+    <span class="okf-muted">okf-loom studio</span>
   </div>
   __NAV_HTML__
 </header>
+__WORKSPACE_NAV__
 
 <!-- iter1 CRI-019: SSR / no-JS fallback banner (see concept_page.html). -->
 <noscript><p class="okf-studio-fallback-banner" role="alert">JavaScript is off. The live studio needs it, so this is a read-only view.</p></noscript>
@@ -46,13 +47,21 @@ __WIKI_CSS_LINK__
 
 <main id="okf-main" class="okf-index">
   <header class="okf-hero">
+    <p class="okf-workspace-eyebrow">Your knowledge library</p>
     <h1 class="okf-index__title">__INDEX_TITLE__</h1>
+    <p class="okf-workspace-summary">Explore a collection, find a concept, or follow the connections.</p>
     __HERO_STATS__
-    <div class="okf-index__intro okf-prose">__INDEX_INTRO__</div>
+    <details class="okf-bundle-about"><summary>About this bundle</summary><div class="okf-index__intro okf-prose">__INDEX_INTRO__</div></details>
   </header>
 
   __SUBDIRS_HTML__
 
+  <div id="okf-catalog-tools" class="okf-catalog-tools" hidden>
+    <label for="okf-catalog-filter">Find a concept</label>
+    <input id="okf-catalog-filter" type="search" placeholder="Filter titles, descriptions and tags" autocomplete="off">
+    <button id="okf-catalog-clear" type="button" class="okf-btn" hidden>Clear filter</button>
+    <output id="okf-catalog-status" role="status" aria-live="polite"></output>
+  </div>
   __GROUPS_HTML__
 </main>
 

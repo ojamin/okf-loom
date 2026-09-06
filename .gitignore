@@ -41,3 +41,7 @@ workspace/
 # OS
 .DS_Store
 Thumbs.db
+
+# Development-only frontend test dependencies
+node_modules/
+test-results/

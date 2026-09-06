@@ -291,6 +291,7 @@
   }
 
   function enhanceTable(table) {
+    var sourceHtml = table.outerHTML;
     table.dataset.okfEnhanced = "1";
     if (!table.tHead || !table.tHead.rows.length) return; // headerless: leave as-is
 
@@ -301,6 +302,7 @@
     var wrap = document.createElement("div");
     wrap.className = "okf-tablewrap";
     wrap.setAttribute("data-source", collapseWs(table.textContent));
+    wrap.setAttribute("data-source-html", sourceHtml);
     table.parentNode.insertBefore(wrap, table);
 
     var rows = tbodyRows(table);

@@ -10,8 +10,7 @@ Done) and current spec §12 (the agent's comment loop):
     → live page patch + change-list entry + graph patch (all visible in the
       browser; iter-3 ARCH3-001 + INTENT3-003 fixed the cross-process SSE
       tail so the documented CLI loop now delivers live updates. This e2e
-      uses ``patchNow()`` as a pragmatic synchronization aid alongside the
-      live SSE path — both prove the same no-refresh patch contract.)
+      observes normal live delivery without calling internal patch helpers.)
       → ``scripts/okf-loom comment-resolve --activity <id>``
       → ``POST /__undo {group_id}`` reverts the whole pass with one click
       → live body reverts + a new ``undo_restore`` change-list entry appears
@@ -44,6 +43,7 @@ meaningful end-to-end without it.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -90,7 +90,7 @@ def _free_port() -> int:
 
 
 def _wait_for_server(proc: subprocess.Popen, base: str) -> None:
-    """Block until ``okf serve`` answers GET / with 200 (or skip on early exit).
+    """Block until ``okf serve`` answers GET / with 200 (fail on early exit).
 
     No ``time.sleep`` pollutes the test assertions; this is a readiness gate
     for the test's own subprocess, not an assertion about app behavior.
@@ -98,7 +98,7 @@ def _wait_for_server(proc: subprocess.Popen, base: str) -> None:
     deadline = time.monotonic() + _SERVER_STARTUP_TIMEOUT
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            pytest.skip(f"okf serve exited early (rc={proc.returncode})")
+            pytest.fail(f"okf serve exited early (rc={proc.returncode})")
         try:
             with urllib.request.urlopen(f"{base}/", timeout=1.0) as resp:
                 if resp.status == 200:
@@ -106,7 +106,7 @@ def _wait_for_server(proc: subprocess.Popen, base: str) -> None:
         except (urllib.error.URLError, ConnectionError, OSError):
             pass
         time.sleep(0.15)
-    pytest.skip(f"okf serve not ready within {_SERVER_STARTUP_TIMEOUT:g}s")
+    pytest.fail(f"okf serve not ready within {_SERVER_STARTUP_TIMEOUT:g}s")
 
 
 @pytest.fixture(scope="module")
@@ -175,7 +175,7 @@ def server_url(e2e_bundle: Path) -> str:
 
 
 @pytest.fixture
-def page():
+def page(request):
     """A Chrome-backed Playwright page.
 
     Uses the system Chrome channel (``AIC_PLAYWRIGHT_CHROME_PATH`` is already
@@ -185,8 +185,10 @@ def page():
     """
     with sync_playwright() as p:
         try:
-            browser = p.chromium.launch(channel="chrome")
+            browser = p.chromium.launch() if os.environ.get("CI") else p.chromium.launch(channel="chrome")
         except Exception as exc:
+            if os.environ.get("CI"):
+                pytest.fail(f"required Chromium unavailable: {exc}")
             pytest.skip(f"chrome channel unavailable: {exc}")
         try:
             context = browser.new_context(
@@ -200,16 +202,17 @@ def page():
                 screenshots=True, snapshots=True, sources=True,
             )
             pg = context.new_page()
-            yield pg
-            # Stop tracing AFTER the test body so the trace data is retained
-            # for the (rare) failure path. We do not write a trace zip on
-            # every pass — that would balloon CI artifact size; pytest's
-            # assertion error path is enough to land the failure.
             try:
-                context.tracing.stop()
-            except Exception:
-                pass
-            context.close()
+                yield pg
+            finally:
+                evidence = TOOLKIT_ROOT / 'test-results' / request.node.name
+                evidence.mkdir(parents=True, exist_ok=True)
+                try:
+                    pg.screenshot(path=str(evidence / 'final.png'), full_page=True)
+                    context.tracing.stop(path=str(evidence / 'trace.zip'))
+                finally:
+                    context.close()
+
         finally:
             browser.close()
 
@@ -422,23 +425,10 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     )
 
     # ------------------------------------------------------------------
-    # Step 8: SKIPPED — "presence chip flips to 'Agent: editing tables/orders'"
-    # depends on Bundle F P2-15 (claim-auto-flips-presence), which has not
-    # landed in iter-2 yet. Per the assignment's escape hatch, we skip this
-    # assertion with a documented note.
-    #
-    # The claim TRANSITION itself we verify via durable state (events.jsonl)
-    # rather than browser DOM, because of two compounding gaps outside
-    # Bundle H's scope:
-    #   (a) the server's _BundleWatcher only watches .md files, so a CLI
-    #       comment-claim (which writes only directives.jsonl + events.jsonl)
-    #       does not trigger a live SSE comment event in the server process;
-    #   (b) studio.js loadComments() fetches /__data/events?limit=500 which
-    #       returns the OLDEST 500 rows — a busy session's presence flood
-    #       pushes recent comment events past that window.
-    # Both are real findings (deferred to iter-3 / Bundle F scope); the
-    # durable-state assertion below proves the CLI side of the loop is
-    # correct (the lifecycle transition IS written with the right state).
+    # Step 8: a session-only CLI claim reaches the live UI without a
+    # document edit, manual fetch, or forced patch.
+    expect(page.locator('.okf-presence')).to_have_attribute('data-state', 'editing', timeout=5_000)
+    expect(page.locator('.okf-presence')).to_contain_text('tables/orders')
     # ------------------------------------------------------------------
     # Durable-state: the comment's latest record in directives.jsonl is
     # state=claimed, and a comment event with state=claimed is in
@@ -486,49 +476,8 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     # Step 10: browser assertions — body patches, change list gains an
     # attributed activity entry, graph patches.
     #
-    # Cross-process SSE gap (deferred finding, documented in Bundle H
-    # output): the CLI link-add runs in its own process. Its save_concept
-    # publishes ``changed`` to the CLI's EventBus (not the server's) and
-    # marks the rev logged in ``.last-logged.json``. The server's watcher
-    # then detects the .md mtime change but DEDUPES it (cross-process
-    # dedup, P1-2) because the rev was already logged — so no live SSE
-    # ``changed`` event reaches the browser. The browser CAN see the new
-    # content via a doc re-fetch (``patchNow``), which is the same path
-    # the SSE ``changed`` handler walks. We drive it explicitly here;
-    # this tests the server's content + the browser's patch machinery
-    # without depending on the (gap) cross-process SSE push.
-    # ------------------------------------------------------------------
-    # Give the server's watcher (1s poll interval) a moment to reload the
-    # bundle from disk after the CLI's write. This is file-bus sync (the
-    # watcher polls mtimes, not a Playwright DOM wait); the same pattern
-    # the iter-1 browser tests use for server-startup readiness.
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        doc_check = page.evaluate(
-            """async () => {
-                const r = await fetch('/__data/doc?id=tables/orders');
-                const d = await r.json();
-                return (d.html || '').indexOf('refund_flow') >= 0;
-            }"""
-        )
-        if doc_check:
-            break
-        time.sleep(0.3)
-    assert doc_check, (
-        "server did not reload tables/orders with the Refund flow link "
-        "within 5s after link-add (watcher not detecting .md change?)"
-    )
-
-    # Drive a doc re-fetch so the browser picks up the CLI's disk write.
-    # Await the async patch so the subsequent assertion sees the result.
-    page.evaluate(
-        """async () => {
-            if (window.okfLoomLive && window.okfLoomLive.patchNow) {
-                try { await window.okfLoomLive.patchNow(); } catch (e) { console.error('patchNow failed', e); }
-            }
-        }"""
-    )
-
+    # The UI must update through normal live delivery (SSE or its real polling
+    # fallback). Do not invoke internal patch functions or refresh the document.
     # (a) Concept body patches: the new "Refund flow" link appears in the
     #     body (block-level patch via applyDoc, no full refresh).
     expect(page.get_by_role("link", name=link_label, exact=True)).to_be_visible(
@@ -708,17 +657,7 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     # Step 15: browser — concept body reverts (block-level patch back),
     # change list gains an undo_restore activity entry.
     # ------------------------------------------------------------------
-    # Drive a doc re-fetch to pick up the undo's disk write. The undo
-    # runs in the server process (POST /__undo), so the SSE ``changed``
-    # event SHOULD reach the browser; but the same patchNow path is the
-    # belt-and-suspenders fallback that also covers SSE timing.
-    page.evaluate(
-        """async () => {
-            if (window.okfLoomLive && window.okfLoomLive.patchNow) {
-                try { await window.okfLoomLive.patchNow(); } catch (e) {}
-            }
-        }"""
-    )
+    # Observe normal live delivery for undo as well.
     # (a) The "Refund flow" link is gone from the body.
     #     Use web-first: the link element should become detached/hidden
     #     via the applyDoc block-level patch. Wait for it to leave the

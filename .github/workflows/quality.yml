@@ -1,0 +1,69 @@
+name: Studio quality
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main, 'overhaul/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install pytest PyYAML
+      - run: python -m pytest -m 'not browser' -q
+      - run: scripts/okf-loom validate docs-bundle --strict
+      - run: scripts/okf-loom build docs-bundle --target static --out /tmp/loom-static
+      - run: scripts/okf-loom build docs-bundle --target spa --out /tmp/loom-spa
+      - run: scripts/okf-loom render docs-bundle --out /tmp/loom.html
+      - name: Verify standard-library fallback
+        run: |
+          python -m pip uninstall -y PyYAML
+          python -m pytest tests/test_yaml_fallback.py -q
+          scripts/okf-loom validate docs-bundle --strict
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: scripts/lint-js.sh
+      - run: npm test
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest PyYAML playwright
+      - run: python -m playwright install --with-deps chromium
+      - name: Required real collaboration loop
+        run: python -m pytest tests/test_studio_iter2_e2e.py -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-failure-evidence
+          path: |
+            test-results/
+            docs/screenshots/

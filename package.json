@@ -1,0 +1,12 @@
+{
+  "name": "okf-loom-development",
+  "private": true,
+  "type": "module",
+  "description": "Development-only DOM tests; the studio has no npm runtime or build step.",
+  "scripts": {
+    "test": "node --test tests/js/*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
