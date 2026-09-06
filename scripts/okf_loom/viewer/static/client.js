@@ -43,6 +43,7 @@ export function createClient({ baseUrl = "", token = "", fetchImpl = fetch } = {
     claim: (body, options = {}) => request("/__claim", { ...options, body }),
     resolve: (body, options = {}) => request("/__resolve", { ...options, body }),
     apply: (body, options = {}) => request("/__apply", { ...options, body }),
+    save: (body, options = {}) => request("/__save", { ...options, body }),
     undo: (body, options = {}) => request("/__undo", { ...options, body }),
   });
 }

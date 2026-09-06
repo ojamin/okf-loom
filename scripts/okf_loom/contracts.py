@@ -29,6 +29,7 @@ ROUTES = {
     "resolve": ("POST", "/__resolve"),
     "presence": ("POST", "/__presence"),
     "apply": ("POST", "/__apply"),
+    "save": ("POST", "/__save"),
     "undo": ("POST", "/__undo"),
     "diff": ("GET", "/__diff"),
     "preview": ("POST", "/__preview"),

@@ -97,6 +97,13 @@ class StudioClient:
             data["group_id"] = group_id
         return self.request("/__apply", data=data)
 
+    def save(self, concept_id: str, source: str, *, expected_rev: str | None,
+             actor: str = "user", allow_forward_reference: bool = False):
+        """Save exact source; None explicitly means create only if absent."""
+        return self.request("/__save", data={"id": concept_id, "source": source,
+            "expected_rev": expected_rev, "actor": actor,
+            "allow_forward_reference": allow_forward_reference})
+
     def undo(self, *, concept=None, rev=None, group_id=None, idempotency_key=None):
         data = {k: v for k, v in {"concept": concept, "rev": rev, "group_id": group_id}.items() if v is not None}
         return self.request("/__undo", data=data, idempotency_key=idempotency_key)

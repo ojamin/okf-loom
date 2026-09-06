@@ -1244,7 +1244,8 @@ class Studio:
                      undoable: bool = True,
                      emit_graph: bool | None = None,
                      path: Path | None = None,
-                     publish: bool = True) -> "WriteResult":
+                     publish: bool = True,
+                     delete: bool = False) -> "WriteResult":
         """The single internal atomic write path for the studio (current spec §10/§13).
 
         Every studio-aware write — CLI mutators (``okf link-add`` /
@@ -1340,6 +1341,8 @@ class Studio:
             except OSError as exc:
                 return WriteResult(ok=False, error=f"cannot read prior content: {exc}",
                                    concept_id=concept_id)
+        if delete and prior_bytes is None:
+            return WriteResult(ok=False, conflict=True, error="already absent", concept_id=concept_id)
 
         # §9.3/§9.4 collision guard. expected_rev is the content-hash the
         # caller saw at read-time; if the on-disk rev has moved, someone
@@ -1395,18 +1398,22 @@ class Studio:
                 concept_id=concept_id, raw=prior_bytes, group_id=group_id,
             )
         elif undoable and prior_bytes is None:
-            # Created case: snapshot an empty placeholder so Undo can remove
-            # the file by restoring empty + the caller can decide to delete.
+            # Absence is distinct from an existing empty file. A tombstone
+            # revision makes creation undoable without corrupting the bundle.
             snap_rev = self.snapshot_for_undo(
-                concept_id=concept_id, raw=b"", group_id=group_id,
+                concept_id=concept_id, raw=b"", group_id=group_id, existed=False,
             )
 
         # Atomic write (AGENTS.md hard rule #8).
-        atomic_write_bytes(target_path, raw_bytes)
+        if delete:
+            target_path.unlink()
+        else:
+            atomic_write_bytes(target_path, raw_bytes)
 
         # Attribute + log + broadcast (the heart of the funnel).
-        new_rev = rev_of(raw_bytes)
-        self.mark_logged(concept_id, raw_bytes)
+        new_rev = "absent" if delete else rev_of(raw_bytes)
+        if not delete:
+            self.mark_logged(concept_id, raw_bytes)
         activity_summary = summary or f"{action} on {concept_id}"
         activity_detail = dict(detail or {})
         if snap_rev is not None:
@@ -1419,7 +1426,7 @@ class Studio:
             emit_graph=emit_graph,
         )
         if publish:
-            self.emit_change(kind="changed", ids=[concept_id], origin=origin)
+            self.emit_change(kind="removed" if delete else "changed", ids=[concept_id], origin=origin)
             # The watcher's disk emit for THIS rev will dedupe (mark_logged
             # above). For non-disk origins the change event is the canonical
             # broadcast.
@@ -1454,6 +1461,7 @@ class Studio:
             action="undo_restore", origin=origin,
             group_id=group_id, undoable=True,
             summary=f"undo {concept_id} @ {rev}", publish=publish,
+            delete=rev == "absent",
         )
 
     # --- comments / directives (§9) -------------------------------------
@@ -1877,7 +1885,7 @@ class Studio:
     # --- undo (§12.5) ---------------------------------------------------
 
     def snapshot_for_undo(self, *, concept_id: str, raw: str | bytes,
-                          group_id: str | None = None) -> str:
+                          group_id: str | None = None, existed: bool = True) -> str:
         """Snapshot prior concept bytes for undo; returns the ``rev`` (§12.5).
 
         Stored at ``history/<safe_cid>/<rev>.md`` (capped ring per concept).
@@ -1888,7 +1896,7 @@ class Studio:
         mid-write leaves no torn snapshot that could silently corrupt a
         future undo. The group manifest write is likewise atomic.
         """
-        rev = rev_of(raw)
+        rev = rev_of(raw) if existed else "absent"
         # F8: reversible, collision-free encoding. ``concept_id.replace("/",
         # "__")`` was non-injective — ``a__b`` and ``a/b`` mapped to the same
         # history dir. Hex of the UTF-8 bytes is injective (and mirrors

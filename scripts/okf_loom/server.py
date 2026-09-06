@@ -372,6 +372,7 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
             "/__claim": self._handle_claim,
             "/__resolve": self._handle_resolve,
             "/__apply": self._handle_apply,
+            "/__save": self._handle_save,
             "/__undo": self._handle_undo,
             "/__preview": self._handle_preview,
         }
@@ -717,6 +718,64 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    def _handle_save(self, data: dict[str, Any]) -> None:
+        """Save exact source with mandatory optimistic concurrency and validation."""
+        from dataclasses import asdict
+        from . import RESERVED_FILENAMES
+        from .paths import concept_id_to_path, concept_id_to_str
+        from .parse import parse_document
+        from .exceptions import OKFParseError
+        from .validate import validate_bundle
+
+        target, source, expected = data.get("id"), data.get("source"), data.get("expected_rev")
+        if (not isinstance(target, str) or not isinstance(source, str)
+                or "expected_rev" not in data
+                or (expected is not None and (not isinstance(expected, str) or not expected))
+                or not isinstance(data.get("allow_forward_reference", False), bool)):
+            return self._send_json(400, {"error": "id, source and expected_rev (null for create) required"})
+        try:
+            cid = concept_id_from_str(target)
+            root = self.bundle.root
+            path = concept_id_to_path(root, cid)
+            path.resolve().relative_to(root.resolve())
+            if path.name.lower() in {name.lower() for name in RESERVED_FILENAMES}:
+                raise ValueError("reserved filename")
+            frontmatter, _ = parse_document(source)
+            if not isinstance(frontmatter.get("type"), str) or not frontmatter["type"].strip():
+                raise ValueError("a non-empty frontmatter type is required")
+        except (ValueError, OKFParseError, OSError, RuntimeError) as exc:
+            return self._send_json(400, {"error": str(exc)})
+        # The surrounding process transaction covers creation as well as updates.
+        current = rev_of(path.read_bytes()) if path.is_file() else None
+        if current != expected:
+            return self._send_json(409, {"error": "Document changed. Review the current source before saving.",
+                "conflict": True, "expected_rev": expected, "current_rev": current})
+        fresh = Bundle.load(root)
+        fresh._load_concept(path, path.relative_to(root), source)
+        fresh.invalidate()
+        report = validate_bundle(fresh)
+        blocked = [f for f in report.findings if f.concept_id == cid and
+                   (f.severity.value == "error" or
+                    (f.code in {"link.broken", "asset.missing"} and not data.get("allow_forward_reference", False)))]
+        if blocked:
+            return self._send_json(422, {"error": "Source validation failed", "findings": [f.as_dict() for f in blocked]})
+        result = self.studio.save_concept(concept_id=concept_id_to_str(cid), raw=source,
+            expected_rev=expected, actor=str(data.get("actor") or "user"), origin="http-save",
+            summary=f"Saved {concept_id_to_str(cid)}", emit_graph=True)
+        if not result.ok:
+            return self._send_json(409 if result.conflict else 422, asdict(result))
+        lock = self._state_lock()
+        def swap() -> None:
+            self.server.bundle = fresh
+            if hasattr(self.server, "_palette"):
+                del self.server._palette
+        if lock is not None:
+            with lock:
+                swap()
+        else:
+            swap()
+        return self._send_json(200, asdict(result))
+
     def _handle_apply(self, data: dict[str, Any]) -> None:
         """Run a whitelisted UpdateOp via the studio write funnel (§9.5/§12.3).
 
@@ -911,7 +970,7 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
                 cur_bytes = cur_path.read_bytes() if cur_path.is_file() else b""
             except OSError:
                 cur_bytes = b""
-            cur_rev = _rev_of_undo(cur_bytes) if cur_bytes else None
+            cur_rev = _rev_of_undo(cur_bytes) if cur_path.is_file() else "absent"
             if cur_rev == r:
                 already_undone.append({"concept": cid, "rev": r, "current_rev": cur_rev})
         if already_undone and len(already_undone) == len(targets):
@@ -1076,6 +1135,7 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
             return self._send_json(200, {
                 "ok": not bool(getattr(self.server, "_reload_error", None)),
                 "api_version": "1", "concepts": len(self.bundle.concepts),
+                "presence": self.studio.get_presence() if self.studio else None,
                 "reload": "error" if getattr(self.server, "_reload_error", None) else "ready",
             })
         # Internal endpoints first.
@@ -1472,6 +1532,7 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
             "type": concept.type,
             "html": body_html,
             "raw": concept.body,
+            "source": concept.raw_text,
             "frontmatter": concept.frontmatter,
             "headings": [{"level": h.level, "text": h.text} for h in concept.headings],
             "backlinks": backlinks,

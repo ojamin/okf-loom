@@ -207,3 +207,68 @@ def test_replay_uses_unique_event_cursor_for_comment_transitions(bundle):
     assert rows[0]['state'] == 'resolved'
     assert rows[0]['id'] == note['id']
     assert rows[0]['event_id'] != cursor
+
+
+def test_exact_source_save_preserves_bytes_and_rejects_stale_or_invalid_writes(bundle):
+    with create_server(bundle, port=0, watch=False) as server:
+        client = StudioClient(server.url, token=server.csrf_token)
+        original = client.document('topic')
+        assert original['source'] == (bundle / 'topic.md').read_text()
+        source = original['source'].replace('title: Topic', 'title: "Revised"\ncustom: {keep: [1, 2]} # deliberate style')
+        result = client.request('/__save', data={'id':'topic', 'source':source, 'expected_rev':original['rev']})
+        assert result['ok']
+        assert (bundle / 'topic.md').read_text() == source
+        assert client.document('topic')['source'] == source
+        with pytest.raises(StudioError) as conflict:
+            client.request('/__save', data={'id':'topic','source':original['source'],'expected_rev':original['rev']})
+        assert conflict.value.status == 409
+        for invalid, status in [({'source':'no frontmatter','expected_rev':result['rev']},400),
+                                ({'source':source},400),
+                                ({'source':source,'expected_rev':None},409),
+                                ({'source':source+'\n[Broken](/absent.md)\n','expected_rev':result['rev']},422)]:
+            with pytest.raises(StudioError) as rejected:
+                client.request('/__save', data={'id':'topic',**invalid})
+            assert rejected.value.status == status
+            assert (bundle / 'topic.md').read_text() == source
+        assert client.undo(concept='topic', rev=result['snap_rev'])['ok']
+        assert client.document('topic')['source'] == original['source']
+
+
+def test_source_create_is_exclusive_and_protects_reserved_files(bundle):
+    with create_server(bundle, port=0, watch=False) as server:
+        client = StudioClient(server.url, token=server.csrf_token)
+        source = '---\ntype: Note\nextra: yes\n---\n\n[Later](/later.md)\n'
+        for cid in ['index','nested/log','../escape']:
+            with pytest.raises(StudioError) as error:
+                client.request('/__save', data={'id':cid,'source':source,'expected_rev':None})
+            assert error.value.status == 400
+        body = {'id':'nested/new','source':source,'expected_rev':None,'allow_forward_reference':True}
+        assert client.request('/__save', data=body)['ok']
+        assert client.document('nested/new')['source'] == source
+        with pytest.raises(StudioError) as error:
+            client.request('/__save', data=body)
+        assert error.value.status == 409
+
+
+def test_undo_creation_removes_the_file_and_undoing_that_restores_it(bundle):
+    with create_server(bundle, port=0, watch=False) as server:
+        client = StudioClient(server.url, token=server.csrf_token)
+        source = '---\ntype: Note\n---\nCreated in a host workspace.\n'
+        created = client.request('/__save', data={'id':'created','source':source,'expected_rev':None})
+        assert created['snap_rev'] == 'absent'
+        assert client.undo(concept='created',rev='absent')['ok']
+        assert not (bundle/'created.md').exists()
+        with pytest.raises(StudioError) as repeated:
+            client.undo(concept='created',rev='absent')
+        assert repeated.value.status == 409
+        assert client.undo(concept='created',rev=created['rev'])['ok']
+        assert client.document('created')['source'] == source
+
+
+def test_source_save_requires_auth_and_obeys_read_only_mode(bundle):
+    for read_only in [False, True]:
+        with create_server(bundle, port=0, studio_edit=not read_only) as server:
+            client = StudioClient(server.url, token=server.csrf_token if read_only else '')
+            with pytest.raises(StudioError) as error:
+                client.request('/__save', data={'id':'topic','source':'---\ntype: Note\n---\n','expected_rev':None})
+            assert error.value.status == 403
