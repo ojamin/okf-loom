@@ -16,7 +16,7 @@ export const styles = `
 .loom-catalog { background:var(--back); padding:20px 14px; border-right:1px solid var(--line); min-width:0; }
 .loom-catalog label { display:grid; gap:6px; }
 .loom-browse-toggle { display:none; }
-.loom-prose h1 { font-size:28px; margin:28px 0 12px; }
+.loom .loom-prose h1 { font-size:28px; margin:28px 0 12px; }
 .loom-catalog form { display:grid; gap:8px; margin-bottom:16px; }
 .loom-catalog ol { list-style:none; margin:12px 0; padding:0; max-height:65vh; overflow-y:auto; }
 .loom-catalog li button { text-align:left; border:0; width:100%; background:transparent; display:grid; line-height:1.4; gap:4px; margin:2px 0; }
@@ -32,6 +32,7 @@ export const styles = `
 .loom-prose a { color:var(--accent); }
 .loom pre { background:var(--back); border:1px solid var(--line); padding:16px; border-radius:8px; overflow:auto; font:13px/1.7 ui-monospace,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
 .loom table { display:block; overflow:auto; border-collapse:collapse; }
+.loom th,.loom td:first-child { white-space:nowrap; }
 .loom td,.loom th { padding:8px 12px; border:1px solid var(--line); text-align:left; }
 .loom blockquote { border-left:3px solid var(--accent); padding-left:18px; margin-left:0; color:var(--muted); }
 .loom details { border:1px solid var(--line); padding:12px 16px; border-radius:7px; margin:16px 0; }

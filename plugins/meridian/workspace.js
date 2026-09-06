@@ -563,7 +563,13 @@ function Workspace({ host }) {
                 ),
               )
             : !doc && !creating
-              ? notice("Loading document…")
+              ? error
+                ? button(
+                    "Retry loading document",
+                    () => run(async () => setDoc(await api.document(selected))),
+                    { disabled: busy },
+                  )
+                : notice("Loading document…")
               : h(
                   "article",
                   null,
