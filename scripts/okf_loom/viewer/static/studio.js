@@ -2711,7 +2711,7 @@ import { createClient } from "./client.js";
     const wrap = el("div", { class: "okf-change okf-change--group", dataset: { actor: members[0].actor } });
     wrap.appendChild(el("span", { class: "okf-change__icon", "aria-hidden": "true" }));
     const b = el("div", { class: "okf-change__body" });
-    b.appendChild(el("div", { class: "okf-change__summary", text: members.length + " changes · group pass" }));
+    b.appendChild(el("div", { class: "okf-change__summary", text: members.length + (members.length === 1 ? " change" : " changes") + " · group pass" }));
     b.appendChild(el("div", { class: "okf-change__meta" }, [el("span", { text: members[0].actor + " · " + fmtTime(members[0].ts) })]));
     wrap.appendChild(b);
     const actions = el("div", { class: "okf-change__actions" });

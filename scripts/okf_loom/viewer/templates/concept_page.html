@@ -67,10 +67,6 @@ __WORKSPACE_NAV__
 <p class="okf-studio-fallback-banner" role="status">Live studio unavailable. Showing a read-only view. <a href="__BRAND_HREF__">Browse the index</a>.</p>
 
 <main id="okf-main" class="okf-page">
-  <aside class="okf-page__sidebar" aria-label="Related concepts">
-    <div class="okf-local-graph" id="okf-local-graph" data-graph="__LOCAL_GRAPH_DATA__" data-root-prefix="__ROOT_PREFIX__"></div>
-  </aside>
-
   <article class="okf-page__main">
     <header class="okf-page__header" style="--okf-type-accent:__CONCEPT_TYPE_COLOR__">
       __BREADCRUMB_HTML__
@@ -83,8 +79,17 @@ __WORKSPACE_NAV__
       __CONCEPT_SUBTITLE__
       <p class="okf-page__description">__CONCEPT_DESCRIPTION__</p>
       <div class="okf-page__meta">__CONCEPT_RESOURCE__ __CONCEPT_TAGS__</div>
-      __GOVERNED_HTML__
     </header>
+
+    <details class="okf-context">
+      <summary>Page context <span>Outline, related concepts &amp; evidence</span></summary>
+      <div class="okf-context__content">
+  <aside class="okf-page__sidebar" aria-label="Related concepts">
+    <div class="okf-local-graph" id="okf-local-graph" data-graph="__LOCAL_GRAPH_DATA__" data-root-prefix="__ROOT_PREFIX__"></div>
+  </aside>
+        <div class="okf-context__evidence">__GOVERNED_HTML__</div>
+      </div>
+    </details>
 
     <div class="okf-prose okf-page__body">
       __CONCEPT_BODY__

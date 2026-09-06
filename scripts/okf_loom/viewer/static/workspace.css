@@ -92,3 +92,21 @@ body:has(.okf-workspace-nav) > main { width: calc(100% - var(--okf-nav-w)); marg
   .okf-cardgrid { display: block; }
   .okf-card { break-inside: avoid; min-height: 0; }
 }
+
+/* Reading is the primary task. Context stays one keyboard action away. */
+.okf-viewer--page .okf-page { display: block; }
+.okf-page__main { max-width: 1040px; margin-inline: auto; }
+.okf-context { border: 1px solid var(--okf-border); border-radius: var(--okf-radius); margin: 0 0 28px; background: var(--okf-bg-elev); }
+.okf-context > summary { cursor: pointer; padding: 14px 18px; font-size: 14px; font-weight: 600; }
+.okf-context > summary span { color: var(--okf-fg-muted); font-size: 12px; font-weight: 400; margin-left: 12px; }
+.okf-context__content { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr); gap: 24px; padding: 0 18px 18px; }
+.okf-context .okf-page__sidebar { position: static; width: auto; max-height: none; margin: 0; padding: 0; resize: horizontal; max-width: 100%; }
+.okf-context__evidence { min-width: 0; overflow-wrap: anywhere; }
+.okf-context .okf-governed { margin-top: 0; }
+.okf-page__header { padding-bottom: 20px; margin-bottom: 20px; }
+.okf-page__body { max-width: 80ch; }
+@media (max-width: 720px) {
+  .okf-context > summary span { display: block; margin: 6px 0 0 16px; }
+  .okf-context__content { grid-template-columns: 1fr; }
+}
+@media print { .okf-context__content { display: grid; } }
