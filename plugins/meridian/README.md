@@ -89,7 +89,8 @@ uninstall through Meridian: polling and the message port stop when the frame
 unmounts, and Markdown/history remain on the Loom server.
 
 Run `npm test`, `scripts/lint-js.sh`, and the platform/export Python tests in
-Loom. In a Meridian checkout, validate the exported manifest with its actual
-`parsePluginManifest` and run the supported plugin installation/surface E2E
-lane before claiming deployment acceptance. Unit tests with a host double do
+Loom. Validate against the deployment’s built SDK with
+`node scripts/verify-meridian.mjs <export-directory> <meridian-checkout>`,
+then run the supported Meridian plugin installation/surface E2E lane before
+claiming deployment acceptance. Unit tests with a host double do
 not prove an installed Meridian session.

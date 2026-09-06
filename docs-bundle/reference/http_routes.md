@@ -34,7 +34,7 @@ y/N ack. See [cli.md § serve](cli.md#serve).
 | GET | `/__raw/<concept_id>` | Raw markdown body. |
 | GET | `/__data/graph.json` | Graph JSON for external tools. |
 | GET | `/__data/content.json` | Full content index JSON. |
-| GET | `/__data/doc?id=` | One concept's `{rev, html, raw, frontmatter, backlinks, outgoing, headings}` for in-place re-render. |
+| GET | `/__data/doc?id=` | One concept's `{rev, html, raw, source, frontmatter, backlinks, outgoing, headings}` for in-place re-render. |
 | GET | `/__data/events` | Filtered change-list read over `events.jsonl`. |
 | GET | `/__events` | SSE stream of change/presence/activity/comment events. |
 | GET | `/__comments` | Canonical comment state from `directives.jsonl`. |
@@ -47,6 +47,7 @@ y/N ack. See [cli.md § serve](cli.md#serve).
 | POST | `/__resolve` | Resolve `{id, summary?, activity?, reply?}` using the existing comment lifecycle. |
 | POST | `/__presence` | Agent presence (idle/watching/thinking/editing) + optional progress `message`. |
 | POST | `/__apply` | Run a whitelisted `UpdateOp` via the studio write funnel. |
+| POST | `/__save` | Save exact Markdown source with mandatory revision checks and validation. |
 | POST | `/__undo` | Restore a prior snapshot (single or group). |
 | POST | `/__preview` | Render arbitrary in-flight markdown. |
 | POST | `/__tunnel` | Server admin: attach/detach/status a cloudflared quick tunnel at runtime. |
@@ -123,8 +124,8 @@ GET /__search?q=customer&format=json
 | `q` | The query string. Capped at `MAX_SEARCH_QUERY_CHARS`; over-long queries are truncated, not rejected. |
 | `format` | `html` (default) or `json`. |
 
-The HTTP path always uses the lexical backend with a limit of `30`.
-For the other five modes use the CLI. JSON shape matches the
+Pass `mode=lexical|semantic|hybrid|tag|entity|relation` to choose a search
+backend; the default is lexical. Results are limited to `30`. JSON shape matches the
 `SearchResult` shape in [search_modes.md § Result shape](search_modes.md).
 
 ## `/__raw/<concept_id>`
@@ -544,3 +545,26 @@ See [/how-to/embed_in_harness.md](/how-to/embed_in_harness.md).
 - [/tutorials/live_studio_basics.md](/tutorials/live_studio_basics.md) — first studio session.
 - [/explanation/live_studio_design.md](/explanation/live_studio_design.md) — why the studio is shaped this way.
 - [`/reference/spec.md`](/reference/spec.md) — current studio and route contract.
+
+
+## `/__save`
+
+```json
+{"id":"tables/orders","source":"---\ntype: Table\n---\n\nUpdated body.\n","expected_rev":"revision-from-document-read","actor":"user"}
+```
+
+Requires `id`, full Markdown `source`, and `expected_rev`. Use the revision from
+`GET /__data/doc` for an update, or explicit `null` for creation only when the
+file is absent. The document response's new `source` field includes frontmatter;
+`raw` remains body-only for compatibility.
+
+The server preserves the supplied source, validates frontmatter/type and link
+integrity, protects reserved filenames, and writes through the canonical
+attributed snapshot funnel. Broken references require explicit
+`allow_forward_reference: true`. HTTP 409 means the target changed; 400 means
+invalid input; 422 means validation or a write constraint refused the save.
+Failures leave the document unchanged. No mutation is automatically retried.
+
+Undoing a newly created document restores absence. Its snapshot revision is
+`absent`, distinct from the hash of an existing empty file. Undoing that removal
+restores the saved document, preserving redo through the ordinary undo API.
