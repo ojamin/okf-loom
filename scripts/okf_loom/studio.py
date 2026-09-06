@@ -1140,7 +1140,7 @@ class Studio:
         skipping = since is not None
         for row in rows:
             if skipping:
-                if row.get("id") == since:
+                if row.get("event_id") == since or row.get("id") == since:
                     skipping = False
                 continue
             if actor and row.get("actor") != actor:

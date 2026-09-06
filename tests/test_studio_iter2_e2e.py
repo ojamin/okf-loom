@@ -509,16 +509,10 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
         "no attributed add_link activity event with group_id=E2E1 in events.jsonl"
     )
 
-    # (c) The change-list panel surfaces the attributed activity. The
-    #     panel's renderChangeList filters ``state.events`` client-side,
-    #     and ``state.events`` is loaded from ``/__data/events?limit=500``
-    #     which currently returns the OLDEST 500 rows (a read_events
-    #     ordering issue outside Bundle H scope). On a busy session the
-    #     presence flood pushes recent activity events past that window.
-    #     We verify the server CAN serve the attributed activity via the
-    #     concept-filtered endpoint (which the panel's filter DOES use
-    #     server-side when the user types a concept), proving the event
-    #     is correctly attributed and retrievable.
+    # (c) Inspect the visible activity panel as well as its durable record.
+    page.get_by_role('button', name='Changes', exact=True).click()
+    expect(page.get_by_role('button', name='Undo group', exact=True)).to_be_visible(timeout=5_000)
+    page.get_by_role('button', name='Comments', exact=True).click()
     filtered = page.evaluate(
         """async () => {
             const r = await fetch('/__data/events?concept=tables/orders&limit=50');
@@ -589,10 +583,8 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     )
 
     # ------------------------------------------------------------------
-    # Step 13: verify the comment state → resolved + reply via durable
-    # state (events.jsonl), using the same approach as step 8. The
-    # browser-DOM visibility gap (documented at step 8) applies equally
-    # to comment-resolve.
+    # Step 13: resolution appears in the open comments panel and durable feed.
+    expect(page.get_by_text('Done - added the link', exact=True)).to_be_visible(timeout=5_000)
     # ------------------------------------------------------------------
     resolve_seen = False
     deadline = time.monotonic() + 5.0
@@ -633,20 +625,11 @@ def test_full_agent_loop_e2e(server_url: str, page, e2e_bundle: Path) -> None:
     csrf_token = token_proc.stdout.strip()
     assert csrf_token, "okf token returned empty"
 
-    undo_result = page.evaluate(
-        """async ({token, groupId}) => {
-            const r = await fetch('/__undo', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-OKF-Token': token,
-                },
-                body: JSON.stringify({ group_id: groupId }),
-            });
-            return { status: r.status, body: r.ok ? await r.json().catch(() => ({})) : null };
-        }""",
-        {"token": csrf_token, "groupId": "E2E1"},
-    )
+    page.get_by_role('button', name='Changes', exact=True).click()
+    with page.expect_response(lambda r: r.url.endswith('/__undo'), timeout=10_000) as undo_response:
+        page.get_by_role('button', name='Undo group', exact=True).click()
+    response = undo_response.value
+    undo_result = {"status": response.status, "body": response.json()}
     undo_status = undo_result["status"]
     undo_body = undo_result["body"]
     assert undo_status == 200, (

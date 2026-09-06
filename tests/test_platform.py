@@ -173,3 +173,35 @@ def test_external_changes_are_loaded_before_notification(bundle):
                 pytest.fail('External change notification was never delivered')
         finally:
             server.studio.bus.unsubscribe(events)
+
+
+def test_http_undo_publishes_after_document_refresh(bundle, monkeypatch):
+    from okf_loom.model import Bundle
+    with create_server(bundle, port=0, watch=False) as server:
+        client = StudioClient(server.url, token=server.csrf_token)
+        client.apply('replace_text', 'topic', {'old': 'Original', 'new': 'Revised'}, group_id='undo-order')
+        events = server.studio.bus.subscribe()
+        original_load = Bundle.load
+        def checked_load(*args, **kwargs):
+            # While undo is refreshing the read model, a live client must
+            # not yet receive an event directing it to fetch that model.
+            assert events.empty(), 'undo notified clients before refreshing content'
+            return original_load(*args, **kwargs)
+        monkeypatch.setattr(Bundle, 'load', checked_load)
+        assert client.undo(group_id='undo-order')['ok']
+        assert not events.empty()
+        assert 'Original' in client.document('topic')['raw']
+        server.studio.bus.unsubscribe(events)
+
+
+def test_replay_uses_unique_event_cursor_for_comment_transitions(bundle):
+    studio = Studio.for_bundle(bundle)
+    note = studio.post_comment(concept='topic', body='Request')
+    studio.update_comment(note['id'], state='claimed', claimed_by='agent')
+    cursor = studio.read_events(order='desc', limit=1)[0]['event_id']
+    studio.resolve_comment(note['id'], reply='Done')
+    rows = studio.read_events(since=cursor)
+    assert len(rows) == 1
+    assert rows[0]['state'] == 'resolved'
+    assert rows[0]['id'] == note['id']
+    assert rows[0]['event_id'] != cursor

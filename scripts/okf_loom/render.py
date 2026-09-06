@@ -2022,11 +2022,12 @@ def _render_index_page(
             # The li keeps the .okf-concept-list li a contract (first anchor
             # = concept link; studio.js stampConceptIds + presence rely on
             # it) — the card look is CSS on top.
+            description_html = f' <span class="okf-concept-desc okf-card__desc">{desc}</span>' if desc else ""
             rows.append(
                 f'<li class="okf-card" style="--okf-type-accent:{_esc(color)}">'
                 f'<a href="{_esc(url)}" class="okf-internal okf-card__link">{_esc(c.title)}</a>'
                 f' <span class="okf-muted okf-card__id">{_esc(cid_str)}</span>'
-                f'{(" <span class=\"okf-concept-desc okf-card__desc\">" + desc + "</span>") if desc else ""}'
+                f'{description_html}'
                 f'{meta_html}'
                 f'</li>'
             )

@@ -1,5 +1,6 @@
 """Bounded event delivery, independent of document storage and HTTP."""
 from __future__ import annotations
+from contextlib import contextmanager
 import queue
 import sys
 import threading
@@ -22,6 +23,7 @@ class EventBus:
         # Queue and invokes the callback per event.
         self._cb_subs: list[_CallbackSub] = []
         self._lock = threading.Lock()
+        self._pending = threading.local()
 
     def subscribe(self, callback: Callable[[dict[str, Any]], None] | None = None
                   ) -> "queue.Queue | _CallbackSub":
@@ -73,8 +75,37 @@ class EventBus:
         with self._lock:
             return len(self._subs) + len(self._cb_subs)
 
+    @contextmanager
+    def batch(self):
+        """Deliver a mutation's events only after its read models are current.
+
+        Nestable and local to the calling thread. Bound accumulated work by
+        the subscriber queue cap, falling back to a resync for large batches.
+        Durable append remains immediate; only in-process delivery is deferred.
+        """
+        if getattr(self._pending, "events", None) is not None:
+            yield
+            return
+        self._pending.events = []
+        try:
+            yield
+        finally:
+            events = self._pending.events
+            self._pending.events = None
+            for event in events:
+                self.publish(event)
+
     def publish(self, event: dict[str, Any]) -> None:
         """Fan ``event`` out to every subscriber; drop+resync slow clients."""
+        pending = getattr(self._pending, "events", None)
+        if pending is not None:
+            if pending and pending[0].get("type") == "resync":
+                return
+            if len(pending) >= self._max_queue:
+                pending[:] = [{"type": "resync"}]
+            else:
+                pending.append(event)
+            return
         with self._lock:
             subs = list(self._subs)
             cb_subs = list(self._cb_subs)

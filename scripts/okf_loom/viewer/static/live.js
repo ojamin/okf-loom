@@ -113,12 +113,14 @@
   // both arm during the boot window before `ready`, and a buffered proxy can
   // deliver the same logical change through both paths. Without a guard the
   // body patches (and pulses) twice for one edit. We key on
-  // `<type>:<rev>:<ids>` and refuse to re-patch a key we've already applied.
+  // per-append event_id (legacy: type/rev/ids). Process-local revision
+  // counters can collide across CLI edits and HTTP undo.
   // The set is capped so a long session doesn't grow unbounded.
   const appliedKeys = new Set();
   const APPLIED_KEYS_CAP = 256;
   function eventKey(d) {
     if (!d || !d.type) return null;
+    if (d.event_id) return d.event_id;
     const ids = Array.isArray(d.ids) ? d.ids.join(",") : "";
     return d.type + ":" + (d.rev != null ? d.rev : "") + ":" + ids;
   }
@@ -251,6 +253,7 @@
       if (events.length) {
         // Reconcile rev from the feed header even if no rows match.
         if (typeof data.rev === "number") noteRev(data.rev);
+        if (order === "desc") events.reverse();
         for (const ev of events) handleEvent(ev);
         // We're getting live data over polling - show as online.
         if (conn.state !== "online") setState("online");
@@ -316,7 +319,7 @@
   function handleEvent(d) {
     if (!d || !d.type) return;
     noteRev(d.rev);
-    if (d.id) lastEventId = d.id;
+    if (d.event_id || d.id) lastEventId = d.event_id || d.id;
     switch (d.type) {
       case "changed": onChange(d, "changed"); break;
       case "created": onChange(d, "created"); break;
@@ -366,6 +369,7 @@
     if (wasApplied(key)) return;
     markApplied(key);
     patchOpenConcept(open, /*pulse*/ true).catch((e) => {
+      appliedKeys.delete(key);
       console.error("[okf-live] patch failed", e);
     });
   }

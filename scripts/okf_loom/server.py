@@ -382,7 +382,7 @@ class OKFWikiHandler(BaseHTTPRequestHandler):
         # Tunnel lifecycle is independent of document writes and can be slow.
         if path == "/__tunnel":
             return handler(data)
-        with studio.transaction():
+        with studio.bus.batch(), studio.transaction():
             return handler(data)
 
     def _check_write_auth(self) -> bool:
